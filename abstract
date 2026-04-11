@@ -1,0 +1,9 @@
+Abstract:- Every existing tool for exam preparation shares the same assumption: that discipline can be measured and
+reported back to the student, and that awareness alone will change behaviour. This assumption does not hold. This
+paper takes a different position: discipline is a stochastic variable to be accommodated, and exam preparation is a
+control problem rather than a planning problem. The proposed system closes a feedback loop around observed student
+behaviour through a behavioural tracker, a scheduling engine driven by a topic priority function and dependency
+graph, and a psychological reset condition that eliminates the backlog accumulation that causes students to abandon
+existing planners entirely. Computational simulation across three conditions shows that priority-directed adaptive
+scheduling achieves 85.7% coverage of high-priority topics against 42.9% for a static schedule, despite beginning at
+half the daily study hours.
