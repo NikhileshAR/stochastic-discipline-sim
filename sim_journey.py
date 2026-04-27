@@ -270,11 +270,13 @@ def run_journey(comp):
         D_daily.append(float(D))
 
     return {
-        "K_smooth": K_smooth,
-        "K_theory": K_theory,
-        "D_daily":  D_daily,
-        "H_daily":  H_daily,
-        "resets":   resets,
+        "K_smooth":      K_smooth,
+        "K_theory":      K_theory,
+        "D_daily":       D_daily,
+        "H_daily":       H_daily,
+        "resets":        resets,
+        "session_count": sum(1 for h in H_daily if h > 0),
+        "total_hours":   sum(H_daily),
     }
 
 # ── Figures ───────────────────────────────────────────────────────────────────
@@ -340,6 +342,9 @@ def main():
     result = run_journey(comp)
 
     print(f"Seed: {args.seed}")
+    print(f"Forced absence windows: {ABSENCE_WINDOWS}")
+    print(f"Total sessions studied: {result['session_count']} of {DAYS} days")
+    print(f"Total hours studied:    {result['total_hours']:.1f}")
     print(f"Resets fired: {result['resets']}")
     print(f"Final smoothed capacity: {result['K_smooth'][-1]:.2f} hrs/day")
 
