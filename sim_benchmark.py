@@ -102,7 +102,7 @@ C_NEGLECT_MARK = 0.20  # mastery at or below this → topic is neglected
 C_NEGLECT_HRS  = 2.5   # capacity threshold before forcing neglected topics in
 C_REVISION_EVERY = 5   # review done topics every N days
 C_REVISION_N   = 2     # how many done topics to review each cycle
-C_REV_SCORE_LO, C_REV_SCORE_HI = 0.75, 0.95  # score range for revision
+C_REV_SCORE_LO, C_REV_SCORE_HI = 0.45, 0.75  # score range for revision (same as regular sessions)
 C_RESET_DAYS   = 3     # consecutive missed days before psychological reset
 C_STREAK_DAYS  = 7     # consecutive compliant days before r boost
 C_R_BOOST      = 1.1   # multiplicative boost after streak
@@ -406,7 +406,7 @@ def run_C_hm(comp, enable_revision=True):
 
         # K_theoretical drives the growth mechanism; actual hours are capped.
         K_theoretical = min(C_K0 * (1 + C_R_BASE) ** day, C_K_TARGET)
-        K_scheduled   = min(K_theoretical, B_HOURS_PER_DAY)  # hours-matched cap
+        K_scheduled   = B_HOURS_PER_DAY  # flat cap — always 4 hrs/day, equal to B
         studied_topics = []
 
         if c > 0:
