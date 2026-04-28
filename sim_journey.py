@@ -24,7 +24,7 @@ TOPICS = [
     {"name": "Work Power Energy",   "W": 0.85, "D": 0.65, "prereqs": [1]},
     {"name": "Rotational Motion",   "W": 0.85, "D": 0.80, "prereqs": [2]},
     {"name": "Gravitation",         "W": 0.70, "D": 0.60, "prereqs": [1]},
-    {"name": "Properties of Matter","W": 0.60, "D": 0.55, "prereqs": []},
+    {"name": "Properties of Matter", "W": 0.60, "D": 0.55, "prereqs": []},
     {"name": "Thermodynamics",      "W": 0.80, "D": 0.70, "prereqs": []},
     {"name": "Kinetic Theory",      "W": 0.70, "D": 0.65, "prereqs": [6]},
     {"name": "Waves",               "W": 0.75, "D": 0.60, "prereqs": []},

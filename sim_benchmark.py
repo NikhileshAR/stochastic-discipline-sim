@@ -38,7 +38,7 @@ TOPICS = [
     {"name": "Work Power Energy",   "W": 0.85, "D": 0.65, "prereqs": [1]},
     {"name": "Rotational Motion",   "W": 0.85, "D": 0.80, "prereqs": [2]},
     {"name": "Gravitation",         "W": 0.70, "D": 0.60, "prereqs": [1]},
-    {"name": "Properties of Matter","W": 0.60, "D": 0.55, "prereqs": []},
+    {"name": "Properties of Matter", "W": 0.60, "D": 0.55, "prereqs": []},
     {"name": "Thermodynamics",      "W": 0.80, "D": 0.70, "prereqs": []},
     {"name": "Kinetic Theory",      "W": 0.70, "D": 0.65, "prereqs": [6]},
     {"name": "Waves",               "W": 0.75, "D": 0.60, "prereqs": []},
@@ -109,7 +109,8 @@ C_R_BOOST      = 1.1   # multiplicative boost after streak
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 COL = {"A": "#DC2626", "B": "#2563EB",
-       "C_hm_no_rev": "#D97706", "C_hm": "#7C3AED", "C": "#16A34A"}
+       "C_hm_no_rev": "#D97706", "C_hm": "#7C3AED",
+       "C": "#16A34A"}
 
 plt.rcParams.update({
     "font.family": "DejaVu Sans",
@@ -647,17 +648,17 @@ def run_monte_carlo(n_runs, base_seed):
         rA      = run_A(comp)
         rB      = run_B(comp)
         rC_nr   = run_C_hm(comp, enable_revision=False)
-        rC_hm_r = run_C_hm(comp, enable_revision=True)
+        rC_hm   = run_C_hm(comp, enable_revision=True)
         rC      = run_C(comp)
         results["cA"].append(coverage(rA["M"]))
         results["cB"].append(coverage(rB["M"]))
         results["cC_nr"].append(coverage(rC_nr["M"]))
-        results["cC_hm"].append(coverage(rC_hm_r["M"]))
+        results["cC_hm"].append(coverage(rC_hm["M"]))
         results["cC"].append(coverage(rC["M"]))
         results["hA"].append(rA["tot"])
         results["hB"].append(rB["tot"])
         results["hC_nr"].append(rC_nr["tot"])
-        results["hC_hm"].append(rC_hm_r["tot"])
+        results["hC_hm"].append(rC_hm["tot"])
         results["hC"].append(rC["tot"])
         if (i + 1) % max(1, n_runs // 10) == 0:
             print(f"  {i+1}/{n_runs} runs done")
