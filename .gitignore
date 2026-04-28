@@ -1,0 +1,14 @@
+# Generated output figures — not part of source
+ablation_table.png
+coverage_distribution.png
+coverage_bar.png
+weighted_mastery.png
+pertopic_mastery.png
+capacity_recovery.png
+discipline_journey.png
+pertopic_mastery.png
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
