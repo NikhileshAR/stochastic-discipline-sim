@@ -1,29 +1,37 @@
 """
-sim_benchmark.py  —  Three-condition benchmark simulation
-==========================================================
+sim_benchmark.py  —  Five-condition ablation benchmark simulation
+==================================================================
 Reproduces Figures 3–5 and Table 1 from the paper.
 
 Usage
 -----
-  python sim_benchmark.py                  # paper seed (42), single run
-  python sim_benchmark.py --seed 123       # different seed, single run
-  python sim_benchmark.py --runs 200       # Monte-Carlo over 200 seeds
+  python sim_benchmark.py                  # Monte-Carlo, 200 seeds (primary result)
+  python sim_benchmark.py --seed 42        # single illustrative run only
+  python sim_benchmark.py --runs 500       # Monte-Carlo over 500 seeds
   python sim_benchmark.py --runs 200 --seed 0   # reproducible Monte-Carlo
-  python sim_benchmark.py --no-figures     # print table only, skip plots
+  python sim_benchmark.py --no-figures     # print tables only, skip plots
 
 Conditions
 ----------
-  A  No schedule   – random topic selection, 2 hrs/day, slow decay
-  B  Static        – sequential topics, 4 hrs/day fixed, no priority
-  C  Adaptive      – proposed system: priority function, dependency graph,
-                     geometric capacity recovery, psychological reset
+  A         No schedule   – random topic selection, 2 hrs/day, slow decay
+  B         Static        – sequential topics, 4 hrs/day fixed, no priority
+  C_hm      Hours-matched – full C scheduling logic, total hours capped to
+                            match B's total for the same seed; isolates
+                            scheduling quality from the hours advantage
+  C_nr      No revision   – C without the periodic revision block; isolates
+                            the revision mechanism's contribution
+  C (full)  Adaptive      – proposed system: priority function, dependency
+                            graph, geometric capacity recovery, psychological
+                            reset, and revision
 
-Fair-hours note
----------------
-Condition C accumulates more total hours than B because geometric capacity
-recovery grows its daily budget from 2 hrs toward 7 hrs. The Monte-Carlo
-run reports this clearly so you can judge how much of C's advantage is
-due to hours vs. scheduling logic.
+Monte Carlo is the primary result.  Single-seed runs are illustrative only
+and are labelled as such in every figure title.
+
+Ablation logic
+--------------
+  B  vs  C_hm   → pure scheduling quality  (same hours, different algorithm)
+  C_hm vs C_nr  → revision contribution    (same hours+scheduling, ± revision)
+  C_nr vs C     → growth-rate hours gain   (revision off vs full system)
 """
 
 import argparse
@@ -38,7 +46,7 @@ TOPICS = [
     {"name": "Work Power Energy",   "W": 0.85, "D": 0.65, "prereqs": [1]},
     {"name": "Rotational Motion",   "W": 0.85, "D": 0.80, "prereqs": [2]},
     {"name": "Gravitation",         "W": 0.70, "D": 0.60, "prereqs": [1]},
-    {"name": "Properties of Matter", "W": 0.60, "D": 0.55, "prereqs": []},
+    {"name": "Properties of Matter","W": 0.60, "D": 0.55, "prereqs": []},
     {"name": "Thermodynamics",      "W": 0.80, "D": 0.70, "prereqs": []},
     {"name": "Kinetic Theory",      "W": 0.70, "D": 0.65, "prereqs": [6]},
     {"name": "Waves",               "W": 0.75, "D": 0.60, "prereqs": []},
@@ -108,9 +116,13 @@ C_STREAK_DAYS  = 7     # consecutive compliant days before r boost
 C_R_BOOST      = 1.1   # multiplicative boost after streak
 
 # ── Colours ───────────────────────────────────────────────────────────────────
-COL = {"A": "#DC2626", "B": "#2563EB",
-       "C_hm_no_rev": "#D97706", "C_hm": "#7C3AED",
-       "C": "#16A34A"}
+COL = {
+    "A":    "#DC2626",   # red
+    "B":    "#2563EB",   # blue
+    "C_hm": "#16A34A",   # medium green  (hours-matched)
+    "C_nr": "#15803D",   # dark green    (no revision)
+    "C":    "#166534",   # deepest green (full adaptive)
+}
 
 plt.rcParams.update({
     "font.family": "DejaVu Sans",
@@ -191,7 +203,8 @@ def run_A(comp):
         hlog.append(h)
         mlog.append(weighted_mastery(M))
 
-    return {"M": M, "m": mlog, "tot": sum(hlog)}
+    sessions = sum(1 for h in hlog if h > 0)
+    return {"M": M, "m": mlog, "tot": sum(hlog), "sessions": sessions}
 
 # ── Condition B — Static schedule ─────────────────────────────────────────────
 def run_B(comp):
@@ -226,7 +239,8 @@ def run_B(comp):
         hlog.append(h)
         mlog.append(weighted_mastery(M))
 
-    return {"M": M, "m": mlog, "tot": sum(hlog)}
+    sessions = sum(1 for h in hlog if h > 0)
+    return {"M": M, "m": mlog, "tot": sum(hlog), "sessions": sessions}
 
 # ── Condition C — Proposed adaptive system ────────────────────────────────────
 def run_C(comp):
@@ -365,21 +379,167 @@ def run_C(comp):
         hlog.append(h)
         mlog.append(weighted_mastery(M))
 
-    return {"M": M, "m": mlog, "resets": resets, "tot": sum(hlog)}
+    return {"M": M, "m": mlog, "resets": resets, "tot": sum(hlog),
+            "sessions": sum(1 for h in hlog if h > 0)}
 
-# ── Condition C hours-matched — adaptive system capped at B's 4 hrs/day ──────
-def run_C_hm(comp, enable_revision=True):
+# ── Condition C_hours_matched — C scheduling, hours capped to B's total ───────
+def run_C_hours_matched(comp, target_hours):
     """
-    Hours-matched variant of the adaptive system.
+    Condition C with full scheduling logic, but total study hours capped to
+    ``target_hours`` (set equal to Condition B's total for the same compliance
+    sequence).  Isolates the value of C's scheduling algorithm from the
+    additional hours that geometric capacity recovery provides.
 
-    Daily budget is capped at B_HOURS_PER_DAY (4 hrs) so the temporal
-    distribution of study hours is comparable to Condition B.  This lets
-    the ablation isolate *scheduling quality* (B vs C_hm_no_rev) and
-    *revision contribution* (C_hm_no_rev vs C_hm) independently of the
-    hours-growth advantage measured by C_hm vs C.
+    When the cumulative-hours budget is exhausted on a compliant day the
+    student is modelled as present but not studying: consec_missed is not
+    incremented (compliance is intact), but no mastery is updated and all
+    topics decay as on an absent day.
+    """
+    M    = np.full(N, 0.2)
+    n    = np.zeros(N, int)
+    done = np.zeros(N, bool)
 
-    enable_revision=False  →  C_hm_no_rev: same hours, no periodic revision.
-    enable_revision=True   →  C_hm:        same hours, revision enabled.
+    K      = C_K0
+    r      = C_R_BASE
+    r_prev = C_R_BASE
+
+    consec_missed = 0
+    streak_buf    = []
+    resets        = []
+    mlog          = []
+    hlog          = []
+    total_h       = 0.0          # cumulative hours spent so far
+
+    for day in range(DAYS):
+        c = comp[day]
+
+        # ── Psychological reset ──────────────────────────────────────────────
+        if consec_missed >= C_RESET_DAYS:
+            resets.append(day)
+            consec_missed = 0
+            r = C_R_BASE
+
+        K_theoretical = min(C_K0 * (1 + C_R_BASE) ** day, C_K_TARGET)
+        studied_topics = []
+
+        if c > 0:
+            # Clamp available hours to remaining budget
+            remaining = max(0.0, target_hours - total_h)
+            h_raw     = c * B_HOURS_PER_DAY   # flat 4 hrs/day — equal to B
+            h         = min(h_raw, remaining)
+            if h < C_MIN_SLOT_HRS:
+                h = 0.0   # budget exhausted for this day
+
+            consec_missed = 0   # student showed up regardless of budget
+
+            if h > 0:
+                total_h += h
+
+                # ── Priority scores ──────────────────────────────────────────
+                P = W_arr * D_arr * (1.0 - M)
+                for i in range(N):
+                    if M[i] >= C_DONE_THRESH:
+                        done[i] = True
+                    if M[i] < C_UNDONE_THRESH and done[i]:
+                        done[i] = False
+                    if done[i]:
+                        P[i] = 0.0
+
+                P2 = P.copy()
+                for j in range(N):
+                    for p in TOPICS[j]["prereqs"]:
+                        P2[p] += C_PROP_GAMMA * C_PROP_LAMBDA * P[j]
+                P = P2
+
+                eligible = [
+                    i for i in range(N)
+                    if all(M[p] >= C_PREREQ_MIN for p in TOPICS[i]["prereqs"])
+                    and not done[i]
+                ]
+                if not eligible:
+                    eligible = [i for i in range(N) if not done[i]]
+                if not eligible:
+                    eligible = list(range(N))
+
+                neglected = [i for i in range(N) if M[i] <= C_NEGLECT_MARK + 1e-6]
+                if neglected and h > C_NEGLECT_HRS:
+                    eligible = list(set(eligible + neglected[:3]))
+
+                top_topics = sorted(eligible, key=lambda i: P[i], reverse=True)
+                n_slots    = min(len(top_topics), max(2, int(h / C_SESSION_LEN)))
+                top        = top_topics[:n_slots]
+                pv         = np.array([P[i] + 1e-9 for i in top])
+                pv        /= pv.sum()
+                hours_each = pv * h
+
+                for idx, t in enumerate(top):
+                    if hours_each[idx] < C_MIN_SLOT_HRS:
+                        continue
+                    s = np.random.uniform(C_SCORE_LO, C_SCORE_HI)
+                    n[t] += 1
+                    alpha = 1.0 / n[t]
+                    M[t]  = np.clip(M[t] + alpha * (s - M[t]), 0, 1)
+                    studied_topics.append(t)
+
+                # Periodic revision (same as full C)
+                done_list = [i for i in range(N) if done[i]]
+                if day % C_REVISION_EVERY == 0 and done_list and h > 0:
+                    for rev in sorted(done_list, key=lambda i: M[i])[:C_REVISION_N]:
+                        s = np.random.uniform(C_REV_SCORE_LO, C_REV_SCORE_HI)
+                        n[rev] += 1
+                        alpha   = 1.0 / n[rev]
+                        M[rev]  = np.clip(M[rev] + alpha * (s - M[rev]), 0, 1)
+                        studied_topics.append(rev)
+
+                D = np.clip(h / B_HOURS_PER_DAY, 0, 1)
+                if D >= 0.8:
+                    r = max(r_prev, C_R_BASE)
+                elif D > 0:
+                    r_prev = r
+                    r = max(r / 2, C_R_BASE * 0.3)
+                streak_buf.append(D)
+                if len(streak_buf) > C_STREAK_DAYS:
+                    streak_buf.pop(0)
+                if len(streak_buf) == C_STREAK_DAYS and all(d >= 0.8 for d in streak_buf):
+                    r *= C_R_BOOST
+
+            else:
+                # Budget exhausted: student present but no studying — decay all
+                D = 0.0
+                streak_buf.append(D)
+                if len(streak_buf) > C_STREAK_DAYS:
+                    streak_buf.pop(0)
+
+        else:
+            h = 0.0
+            consec_missed += 1
+            r_prev = r
+            r = C_R_BASE * 0.1
+            streak_buf.append(0.0)
+            if len(streak_buf) > C_STREAK_DAYS:
+                streak_buf.pop(0)
+
+        # Knowledge decay for unstudied topics
+        for j in range(N):
+            if j not in studied_topics:
+                M[j] *= C_DECAY
+        M = np.clip(M, 0, 1)
+
+        K = 0.8 * K + 0.2 * h
+        hlog.append(h)
+        mlog.append(weighted_mastery(M))
+
+    return {"M": M, "m": mlog, "resets": resets, "tot": sum(hlog),
+            "sessions": sum(1 for h in hlog if h > 0)}
+
+
+# ── Condition C_no_revision — C without the revision block ────────────────────
+def run_C_no_revision(comp):
+    """
+    Condition C with the periodic revision mechanism disabled.
+    Isolates the contribution of high-score revision draws (0.75–0.95) to
+    C's mastery gains, holding all other components (priority function,
+    dependency graph, geometric capacity recovery, resets) constant.
     """
     M    = np.full(N, 0.2)
     n    = np.zeros(N, int)
@@ -404,18 +564,14 @@ def run_C_hm(comp, enable_revision=True):
             consec_missed = 0
             r = C_R_BASE
 
-        # K_theoretical drives the growth mechanism; actual hours are capped.
         K_theoretical = min(C_K0 * (1 + C_R_BASE) ** day, C_K_TARGET)
-        K_scheduled   = B_HOURS_PER_DAY  # flat cap — always 4 hrs/day, equal to B
         studied_topics = []
 
         if c > 0:
-            h = c * K_scheduled
+            h = c * K_theoretical
             consec_missed = 0
 
-            # ── Priority scores ──────────────────────────────────────────────
             P = W_arr * D_arr * (1.0 - M)
-
             for i in range(N):
                 if M[i] >= C_DONE_THRESH:
                     done[i] = True
@@ -424,14 +580,12 @@ def run_C_hm(comp, enable_revision=True):
                 if done[i]:
                     P[i] = 0.0
 
-            # Priority propagation through dependency graph
             P2 = P.copy()
             for j in range(N):
                 for p in TOPICS[j]["prereqs"]:
                     P2[p] += C_PROP_GAMMA * C_PROP_LAMBDA * P[j]
             P = P2
 
-            # Eligible topics: prereqs sufficiently mastered, not done
             eligible = [
                 i for i in range(N)
                 if all(M[p] >= C_PREREQ_MIN for p in TOPICS[i]["prereqs"])
@@ -442,12 +596,10 @@ def run_C_hm(comp, enable_revision=True):
             if not eligible:
                 eligible = list(range(N))
 
-            # Bring in neglected topics when capacity allows
             neglected = [i for i in range(N) if M[i] <= C_NEGLECT_MARK + 1e-6]
             if neglected and h > C_NEGLECT_HRS:
                 eligible = list(set(eligible + neglected[:3]))
 
-            # Select top topics by priority and allocate hours proportionally
             top_topics = sorted(eligible, key=lambda i: P[i], reverse=True)
             n_slots    = min(len(top_topics), max(2, int(h / C_SESSION_LEN)))
             top        = top_topics[:n_slots]
@@ -464,19 +616,9 @@ def run_C_hm(comp, enable_revision=True):
                 M[t]  = np.clip(M[t] + alpha * (s - M[t]), 0, 1)
                 studied_topics.append(t)
 
-            # Periodic revision of completed topics (only when enabled)
-            if enable_revision:
-                done_list = [i for i in range(N) if done[i]]
-                if day % C_REVISION_EVERY == 0 and done_list and h > 0:
-                    for rev in sorted(done_list, key=lambda i: M[i])[:C_REVISION_N]:
-                        s = np.random.uniform(C_REV_SCORE_LO, C_REV_SCORE_HI)
-                        n[rev] += 1
-                        alpha   = 1.0 / n[rev]
-                        M[rev]  = np.clip(M[rev] + alpha * (s - M[rev]), 0, 1)
-                        studied_topics.append(rev)
+            # Revision block intentionally omitted
 
-            # Discipline score relative to the capped schedule
-            D = np.clip(h / K_scheduled, 0, 1) if K_scheduled > 0 else 0.0
+            D = np.clip(h / K_theoretical, 0, 1) if K_theoretical > 0 else 0.0
             if D >= 0.8:
                 r = max(r_prev, C_R_BASE)
             elif D > 0:
@@ -497,67 +639,104 @@ def run_C_hm(comp, enable_revision=True):
             if len(streak_buf) > C_STREAK_DAYS:
                 streak_buf.pop(0)
 
-        # ── Knowledge decay for unstudied topics ─────────────────────────────
         for j in range(N):
             if j not in studied_topics:
                 M[j] *= C_DECAY
         M = np.clip(M, 0, 1)
 
         K = 0.8 * K + 0.2 * h
-
         hlog.append(h)
         mlog.append(weighted_mastery(M))
 
-    return {"M": M, "m": mlog, "resets": resets, "tot": sum(hlog)}
+    return {"M": M, "m": mlog, "resets": resets, "tot": sum(hlog),
+            "sessions": sum(1 for h in hlog if h > 0)}
+
+
+# ── Ablation table printer ────────────────────────────────────────────────────
+def print_ablation_table(rA, rB, rC_hm, rC_nr, rC, label=""):
+    """
+    Print a formatted ablation table for a single seed run.
+    Columns: Condition | Coverage % | Hours | Sessions | Wtd-Mastery
+    """
+    rows = [
+        ("A   — No schedule",      rA),
+        ("B   — Static",           rB),
+        ("C_hm — Hours-matched",   rC_hm),
+        ("C_nr — No revision",     rC_nr),
+        ("C   — Full adaptive",    rC),
+    ]
+    sep = "─" * 72
+    hdr = f"{'Condition':<28} {'Coverage':>10} {'Hours':>8} {'Sessions':>10} {'Wtd-Mast':>10}"
+    if label:
+        print(f"\n{label}")
+    print(f"\n{sep}")
+    print(hdr)
+    print(sep)
+    for lbl, r in rows:
+        cov = coverage(r["M"])
+        hrs = r["tot"]
+        ses = r["sessions"]
+        wm  = r["m"][-1]
+        print(f"{lbl:<28} {cov:>9.1f}% {hrs:>8.0f} {ses:>10} {wm:>10.3f}")
+    print(sep)
+    # Derived interpretation lines
+    b_cov  = coverage(rB["M"])
+    hm_cov = coverage(rC_hm["M"])
+    nr_cov = coverage(rC_nr["M"])
+    c_cov  = coverage(rC["M"])
+    print(f"  Pure scheduling gain  (C_hm − B):       {hm_cov - b_cov:+.1f}%")
+    print(f"  Revision contribution (C_nr − C_hm):    {nr_cov - hm_cov:+.1f}%")
+    print(f"  Hours-growth gain     (C_full − C_nr):  {c_cov  - nr_cov:+.1f}%")
+    print(sep)
 
 # ── Single-run figures ────────────────────────────────────────────────────────
-def save_figures(rA, rB, rC_hm_nr, rC_hm, rC):
-    dx = np.arange(DAYS)
+def save_figures(rA, rB, rC_hm, rC_nr, rC, seed):
+    """Save illustrative single-seed figures (Figures 3–5)."""
+    illu = f"Illustrative — seed {seed}"
+    dx   = np.arange(DAYS)
 
     # Fig 3 — weighted mastery over time (14-day rolling average)
     fig3, ax3 = plt.subplots(figsize=(8, 3.5))
-    ax3.plot(dx, rolling14(rA["m"]),       color=COL["A"],           ls="--", lw=2.0, alpha=0.9,
+    ax3.plot(dx, rolling14(rA["m"]),    color=COL["A"],    ls="--", lw=2.0, alpha=0.9,
              label="A — No Schedule")
-    ax3.plot(dx, rolling14(rB["m"]),       color=COL["B"],           ls=":",  lw=2.0, alpha=0.9,
-             label="B — Static Schedule (4 hrs/day)")
-    ax3.plot(dx, rolling14(rC_hm_nr["m"]), color=COL["C_hm_no_rev"], ls="-.", lw=1.8, alpha=0.85,
-             label="C_hm_no_rev — Adaptive, 4 hrs/day, no revision")
-    ax3.plot(dx, rolling14(rC_hm["m"]),   color=COL["C_hm"],        ls="-.", lw=1.8, alpha=0.85,
-             label="C_hm — Adaptive, 4 hrs/day, revision")
-    ax3.plot(dx, rolling14(rC["m"]),       color=COL["C"],           ls="-",  lw=2.4, alpha=0.95,
-             label="C — Adaptive, full hours, revision (proposed)")
+    ax3.plot(dx, rolling14(rB["m"]),    color=COL["B"],    ls=":",  lw=2.0, alpha=0.9,
+             label="B — Static (4 hrs/day)")
+    ax3.plot(dx, rolling14(rC_hm["m"]), color=COL["C_hm"], ls="-.", lw=1.8, alpha=0.85,
+             label="C_hm — Hours-matched")
+    ax3.plot(dx, rolling14(rC_nr["m"]), color=COL["C_nr"], ls="-.", lw=1.8, alpha=0.85,
+             label="C_nr — No revision")
+    ax3.plot(dx, rolling14(rC["m"]),    color=COL["C"],    ls="-",  lw=2.4, alpha=0.95,
+             label="C — Full Adaptive")
     for rd in rC["resets"]:
         ax3.axvline(rd, color=COL["C"], ls=":", lw=0.9, alpha=0.45)
         ax3.annotate("\u21ba", xy=(rd + 1, 0.03), fontsize=10, color=COL["C"], alpha=0.8)
     ax3.set_xlabel("Day")
     ax3.set_ylabel("Weighted Mastery Score (0\u20131)")
+    ax3.set_title(f"Weighted mastery over time  ({illu})")
     ax3.set_xlim(0, DAYS)
     ax3.set_ylim(0, 1.0)
-    ax3.legend(loc="lower right", fontsize=9, framealpha=0.9)
+    ax3.legend(loc="lower right", fontsize=10, framealpha=0.9)
     fig3.tight_layout(pad=0.6)
     fig3.savefig("weighted_mastery.png", dpi=300, bbox_inches="tight")
     plt.close(fig3)
     print("Saved weighted_mastery.png")
 
-    cA      = coverage(rA["M"])
-    cB      = coverage(rB["M"])
-    cC_nr   = coverage(rC_hm_nr["M"])
-    cC_hm   = coverage(rC_hm["M"])
-    cC      = coverage(rC["M"])
+    cA   = coverage(rA["M"])
+    cB   = coverage(rB["M"])
+    cC_hm = coverage(rC_hm["M"])
+    cC_nr = coverage(rC_nr["M"])
+    cC   = coverage(rC["M"])
 
-    # Fig 4 — coverage bar chart
-    labels = [
-        "A\n(No Schedule)",
-        "B\n(Static, 4 hrs)",
-        "C_hm_no_rev\n(Adaptive, 4 hrs)",
-        "C_hm\n(+Revision, 4 hrs)",
-        "C\n(Full Adaptive)",
-    ]
-    vals   = [cA, cB, cC_nr, cC_hm, cC]
-    colors = [COL["A"], COL["B"], COL["C_hm_no_rev"], COL["C_hm"], COL["C"]]
+    # Fig 4 — coverage bar chart (all 5 conditions)
     fig4, ax4 = plt.subplots(figsize=(8, 4))
-    bars = ax4.bar(labels, vals, color=colors,
-                   edgecolor="white", linewidth=1.5, width=0.52, alpha=0.92)
+    labels = [
+        "A\n(No Schedule)", "B\n(Static, 4 hrs)",
+        "C_hm\n(Hrs-matched)", "C_nr\n(No revision)", "C\n(Full Adaptive)",
+    ]
+    vals   = [cA, cB, cC_hm, cC_nr, cC]
+    colors = [COL["A"], COL["B"], COL["C_hm"], COL["C_nr"], COL["C"]]
+    bars = ax4.bar(labels, vals, color=colors, edgecolor="white",
+                   linewidth=1.5, width=0.55, alpha=0.92)
     for bar, val in zip(bars, vals):
         ax4.text(
             bar.get_x() + bar.get_width() / 2, bar.get_height() + 1.5,
@@ -565,68 +744,32 @@ def save_figures(rA, rB, rC_hm_nr, rC_hm, rC):
             fontsize=12, fontweight="bold", color="#1F2937",
         )
     ax4.set_ylabel("High-Priority Coverage (%)")
+    ax4.set_title(f"High-priority coverage — ablation  ({illu})")
     ax4.set_ylim(0, 115)
     fig4.tight_layout(pad=0.6)
     fig4.savefig("coverage_bar.png", dpi=300, bbox_inches="tight")
     plt.close(fig4)
     print("Saved coverage_bar.png")
 
-    # Ablation table figure
-    rows = [
-        ("A",           cA,    rA["tot"],    rA["m"][-1],    "—"),
-        ("B",           cB,    rB["tot"],    rB["m"][-1],    "—"),
-        ("C_hm_no_rev", cC_nr, rC_hm_nr["tot"], rC_hm_nr["m"][-1], "—"),
-        ("C_hm",        cC_hm, rC_hm["tot"], rC_hm["m"][-1],
-         f"+{cC_hm - cC_nr:+.1f}%"),
-        ("C",           cC,    rC["tot"],    rC["m"][-1],
-         f"+{cC - cC_hm:+.1f}%"),
-    ]
-    col_labels = ["Condition", "Coverage %", "Total hrs", "Wtd mastery", "Δ coverage vs prev"]
-    fig6, ax6 = plt.subplots(figsize=(9, 2.2))
-    ax6.axis("off")
-    tbl = ax6.table(
-        cellText=[[r[0], f"{r[1]:.1f}", f"{r[2]:.0f}", f"{r[3]:.3f}", r[4]]
-                  for r in rows],
-        colLabels=col_labels,
-        cellLoc="center", loc="center",
-    )
-    tbl.auto_set_font_size(False)
-    tbl.set_fontsize(10)
-    tbl.scale(1, 1.55)
-    for (row, col), cell in tbl.get_celld().items():
-        if row == 0:
-            cell.set_facecolor("#E5E7EB")
-            cell.set_text_props(fontweight="bold")
-        elif col == 0:
-            cname = rows[row - 1][0]
-            cell.set_facecolor(COL.get(cname, "#F9FAFB") + "33")
-    fig6.tight_layout(pad=0.3)
-    fig6.savefig("ablation_table.png", dpi=200, bbox_inches="tight")
-    plt.close(fig6)
-    print("Saved ablation_table.png")
-
-    # Fig 5 — per-topic mastery sorted by weightage
+    # Fig 5 — per-topic mastery (A / B / C full only, to keep the chart readable)
     sort_idx = np.argsort(W_arr)[::-1]
-    labs = [TOPICS[i]["name"] for i in sort_idx]
+    labs     = [TOPICS[i]["name"] for i in sort_idx]
     fig5, ax5 = plt.subplots(figsize=(14, 4))
     x = np.arange(N)
-    w = 0.16
-    ax5.bar(x - 2*w, rA["M"][sort_idx],       w, color=COL["A"],           alpha=0.85, edgecolor="white", lw=0.8,
+    w = 0.28
+    ax5.bar(x - w, rA["M"][sort_idx], w, color=COL["A"],  alpha=0.85, edgecolor="white", lw=0.8,
             label="A — No Schedule")
-    ax5.bar(x -   w, rB["M"][sort_idx],       w, color=COL["B"],           alpha=0.85, edgecolor="white", lw=0.8,
-            label="B — Static")
-    ax5.bar(x,       rC_hm_nr["M"][sort_idx], w, color=COL["C_hm_no_rev"], alpha=0.85, edgecolor="white", lw=0.8,
-            label="C_hm_no_rev")
-    ax5.bar(x +   w, rC_hm["M"][sort_idx],   w, color=COL["C_hm"],        alpha=0.85, edgecolor="white", lw=0.8,
-            label="C_hm")
-    ax5.bar(x + 2*w, rC["M"][sort_idx],       w, color=COL["C"],           alpha=0.90, edgecolor="white", lw=0.8,
+    ax5.bar(x,     rB["M"][sort_idx], w, color=COL["B"],  alpha=0.85, edgecolor="white", lw=0.8,
+            label="B — Static Schedule")
+    ax5.bar(x + w, rC["M"][sort_idx], w, color=COL["C"],  alpha=0.90, edgecolor="white", lw=0.8,
             label="C — Full Adaptive")
     ax5.set_xlabel("Topic (sorted by weightage, highest to lowest)")
     ax5.set_ylabel("Mastery Score (0\u20131)")
+    ax5.set_title(f"Per-topic mastery  ({illu})")
     ax5.set_xticks(x)
     ax5.set_xticklabels(labs, rotation=40, ha="right", fontsize=9)
     ax5.set_ylim(0, 1.05)
-    ax5.legend(loc="upper right", fontsize=10)
+    ax5.legend(loc="upper right", fontsize=11)
     fig5.tight_layout(pad=0.6)
     fig5.savefig("pertopic_mastery.png", dpi=300, bbox_inches="tight")
     plt.close(fig5)
@@ -635,113 +778,179 @@ def save_figures(rA, rB, rC_hm_nr, rC_hm, rC):
 # ── Monte-Carlo across multiple seeds ────────────────────────────────────────
 def run_monte_carlo(n_runs, base_seed):
     """
-    Run the benchmark n_runs times with different seeds.
-    Prints mean ± std for coverage and total hours per condition.
-    Also saves a coverage distribution plot.
+    Run the five-condition ablation benchmark n_runs times.
+
+    Primary outputs
+    ---------------
+    • Printed ablation table: mean ± std for coverage and hours per condition.
+    • ablation_table.png — bar chart with error bars (the paper's primary figure).
+    • coverage_distribution.png — stacked histogram of coverage distributions.
+
+    Interpretation guide printed below the table:
+      B  vs  C_hm   → pure scheduling quality  (same hours, different algorithm)
+      C_hm vs C_nr  → revision contribution    (same hours + scheduling, ± revision)
+      C_nr vs C     → hours-growth advantage   (revision off vs full system)
     """
-    results = {"cA": [], "cB": [], "cC_nr": [], "cC_hm": [], "cC": [],
-               "hA": [], "hB": [], "hC_nr": [], "hC_hm": [], "hC": []}
+    results = {
+        "cA": [],    "cB": [],    "cC_hm": [],  "cC_nr": [],  "cC": [],
+        "hA": [],    "hB": [],    "hC_hm": [],  "hC_nr": [],  "hC": [],
+        "sA": [],    "sB": [],    "sC_hm": [],  "sC_nr": [],  "sC": [],
+    }
 
     for i in range(n_runs):
         np.random.seed(base_seed + i)
-        comp = gen_compliance()
-        rA      = run_A(comp)
-        rB      = run_B(comp)
-        rC_nr   = run_C_hm(comp, enable_revision=False)
-        rC_hm   = run_C_hm(comp, enable_revision=True)
-        rC      = run_C(comp)
+        comp  = gen_compliance()
+        rA    = run_A(comp)
+        rB    = run_B(comp)
+        rC_hm = run_C_hours_matched(comp, rB["tot"])
+        rC_nr = run_C_no_revision(comp)
+        rC    = run_C(comp)
+
         results["cA"].append(coverage(rA["M"]))
         results["cB"].append(coverage(rB["M"]))
-        results["cC_nr"].append(coverage(rC_nr["M"]))
         results["cC_hm"].append(coverage(rC_hm["M"]))
+        results["cC_nr"].append(coverage(rC_nr["M"]))
         results["cC"].append(coverage(rC["M"]))
+
         results["hA"].append(rA["tot"])
         results["hB"].append(rB["tot"])
-        results["hC_nr"].append(rC_nr["tot"])
         results["hC_hm"].append(rC_hm["tot"])
+        results["hC_nr"].append(rC_nr["tot"])
         results["hC"].append(rC["tot"])
+
+        results["sA"].append(rA["sessions"])
+        results["sB"].append(rB["sessions"])
+        results["sC_hm"].append(rC_hm["sessions"])
+        results["sC_nr"].append(rC_nr["sessions"])
+        results["sC"].append(rC["sessions"])
+
         if (i + 1) % max(1, n_runs // 10) == 0:
             print(f"  {i+1}/{n_runs} runs done")
 
-    print(f"\n{'─'*72}")
-    print(f"Monte-Carlo results over {n_runs} runs (seed range {base_seed}–{base_seed+n_runs-1})")
-    print(f"{'─'*72}")
-    for cond, ck, hk in [
-        ("A          ", "cA",    "hA"),
-        ("B          ", "cB",    "hB"),
-        ("C_hm_no_rev", "cC_nr", "hC_nr"),
-        ("C_hm       ", "cC_hm", "hC_hm"),
-        ("C          ", "cC",    "hC"),
-    ]:
+    sep = "─" * 80
+    print(f"\n{sep}")
+    print(f"Monte-Carlo ablation  |  {n_runs} seeds  (range {base_seed}–{base_seed+n_runs-1})")
+    print(sep)
+    print(f"{'Condition':<26} {'Coverage (%)':>14} {'Hours':>12} {'Sessions':>10}")
+    print(sep)
+    cond_info = [
+        ("A   — No schedule",    "cA",    "hA",    "sA"),
+        ("B   — Static",         "cB",    "hB",    "sB"),
+        ("C_hm — Hrs-matched",   "cC_hm", "hC_hm", "sC_hm"),
+        ("C_nr — No revision",   "cC_nr", "hC_nr", "sC_nr"),
+        ("C   — Full adaptive",  "cC",    "hC",    "sC"),
+    ]
+    for lbl, ck, hk, sk in cond_info:
         cv = results[ck]
         hv = results[hk]
-        print(f"Condition {cond}  coverage: {np.mean(cv):5.1f}% ± {np.std(cv):.1f}%  "
-              f"| hours: {np.mean(hv):5.0f} ± {np.std(hv):.0f}")
-    print(f"{'─'*72}")
+        sv = results[sk]
+        print(f"{lbl:<26} {np.mean(cv):6.1f}% ±{np.std(cv):4.1f}%  "
+              f"{np.mean(hv):6.0f} ±{np.std(hv):3.0f}  "
+              f"{np.mean(sv):7.0f} ±{np.std(sv):.0f}")
+    print(sep)
+    # Interpretation
+    bm   = np.mean(results["cB"])
+    hmm  = np.mean(results["cC_hm"])
+    nrm  = np.mean(results["cC_nr"])
+    cm   = np.mean(results["cC"])
+    print(f"  Pure scheduling gain  (C_hm − B):       {hmm - bm:+.1f}%  (same hours, better algorithm)")
+    print(f"  Revision contribution (C_nr − C_hm):    {nrm - hmm:+.1f}%  (same hours+scheduling, ± revision)")
+    print(f"  Hours-growth gain     (C_full − C_nr):  {cm  - nrm:+.1f}%  (full system vs no revision)")
+    print(sep)
 
-    # Distribution plot
-    fig, ax = plt.subplots(figsize=(7, 4))
+    # ── Ablation bar chart (primary figure) ───────────────────────────────────
+    fig_abl, ax_abl = plt.subplots(figsize=(10, 5))
+    cond_labels = [
+        "A\n(No sched.)",
+        "B\n(Static)",
+        "C_hm\n(Hrs-matched)",
+        "C_nr\n(No revision)",
+        "C\n(Full)",
+    ]
+    means  = [np.mean(results[k]) for k in ["cA", "cB", "cC_hm", "cC_nr", "cC"]]
+    stds   = [np.std(results[k])  for k in ["cA", "cB", "cC_hm", "cC_nr", "cC"]]
+    colors = [COL["A"], COL["B"], COL["C_hm"], COL["C_nr"], COL["C"]]
+    bars = ax_abl.bar(
+        cond_labels, means, yerr=stds, capsize=6,
+        color=colors, alpha=0.88, width=0.55,
+        error_kw={"linewidth": 1.8, "ecolor": "#374151"},
+    )
+    for bar, m, s in zip(bars, means, stds):
+        ax_abl.text(
+            bar.get_x() + bar.get_width() / 2,
+            m + s + 1.5,
+            f"{m:.1f}%",
+            ha="center", va="bottom", fontsize=11, fontweight="bold", color="#1F2937",
+        )
+    ax_abl.set_ylabel("High-Priority Coverage (%) — mean ± std")
+    ax_abl.set_title(
+        f"Ablation over {n_runs} seeds  "
+        f"(seed range {base_seed}–{base_seed+n_runs-1})  —  PRIMARY RESULT",
+        fontsize=12,
+    )
+    ax_abl.set_ylim(0, 115)
+    fig_abl.tight_layout(pad=0.6)
+    fig_abl.savefig("ablation_table.png", dpi=300, bbox_inches="tight")
+    plt.close(fig_abl)
+    print("Saved ablation_table.png")
+
+    # ── Coverage distribution histogram ───────────────────────────────────────
+    fig_dist, ax_dist = plt.subplots(figsize=(8, 4))
     bins = np.linspace(0, 100, 21)
-    ax.hist(results["cA"],    bins=bins, alpha=0.6, color=COL["A"],           label="A — No Schedule")
-    ax.hist(results["cB"],    bins=bins, alpha=0.6, color=COL["B"],           label="B — Static")
-    ax.hist(results["cC_nr"], bins=bins, alpha=0.6, color=COL["C_hm_no_rev"], label="C_hm_no_rev")
-    ax.hist(results["cC_hm"], bins=bins, alpha=0.6, color=COL["C_hm"],        label="C_hm")
-    ax.hist(results["cC"],    bins=bins, alpha=0.6, color=COL["C"],            label="C — Full Adaptive")
-    ax.set_xlabel("High-Priority Coverage (%) at Day 180")
-    ax.set_ylabel("Count")
-    ax.set_title(f"Coverage distribution over {n_runs} seeds")
-    ax.legend()
-    fig.tight_layout(pad=0.6)
-    fig.savefig("coverage_distribution.png", dpi=200, bbox_inches="tight")
-    plt.close(fig)
+    ax_dist.hist(results["cA"],    bins=bins, alpha=0.55, color=COL["A"],    label="A — No Schedule")
+    ax_dist.hist(results["cB"],    bins=bins, alpha=0.55, color=COL["B"],    label="B — Static")
+    ax_dist.hist(results["cC_hm"], bins=bins, alpha=0.55, color=COL["C_hm"], label="C_hm — Hrs-matched")
+    ax_dist.hist(results["cC_nr"], bins=bins, alpha=0.55, color=COL["C_nr"], label="C_nr — No revision")
+    ax_dist.hist(results["cC"],    bins=bins, alpha=0.55, color=COL["C"],    label="C — Full Adaptive")
+    ax_dist.set_xlabel("High-Priority Coverage (%) at Day 180")
+    ax_dist.set_ylabel("Count")
+    ax_dist.set_title(f"Coverage distribution over {n_runs} seeds")
+    ax_dist.legend(fontsize=10)
+    fig_dist.tight_layout(pad=0.6)
+    fig_dist.savefig("coverage_distribution.png", dpi=200, bbox_inches="tight")
+    plt.close(fig_dist)
     print("Saved coverage_distribution.png")
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="Stochastic discipline benchmark simulation")
     parser.add_argument("--seed",       type=int, default=42,
-                        help="Random seed for single run (default: 42, matches paper)")
-    parser.add_argument("--runs",       type=int, default=1,
-                        help="Number of Monte-Carlo runs (default: 1)")
+                        help="Base random seed (default: 42, matches paper)")
+    parser.add_argument("--runs",       type=int, default=200,
+                        help="Number of Monte-Carlo runs (default: 200).  "
+                             "Set to 1 for a single illustrative run.")
     parser.add_argument("--no-figures", action="store_true",
                         help="Skip saving figures (useful for batch runs)")
     args = parser.parse_args()
 
+    # ── Monte-Carlo (primary result) ─────────────────────────────────────────
     if args.runs > 1:
-        print(f"Running Monte-Carlo benchmark: {args.runs} seeds starting at {args.seed}")
+        print(f"Running Monte-Carlo ablation: {args.runs} seeds "
+              f"(base seed {args.seed})")
         run_monte_carlo(args.runs, args.seed)
-    else:
-        np.random.seed(args.seed)
-        comp = gen_compliance()
-        print(f"Running single benchmark (seed={args.seed})...")
-        rA      = run_A(comp)
-        rB      = run_B(comp)
-        rC_nr   = run_C_hm(comp, enable_revision=False)
-        rC_hm   = run_C_hm(comp, enable_revision=True)
-        rC      = run_C(comp)
 
-        cA    = coverage(rA["M"])
-        cB    = coverage(rB["M"])
-        cC_nr = coverage(rC_nr["M"])
-        cC_hm = coverage(rC_hm["M"])
-        cC    = coverage(rC["M"])
+    # ── Single illustrative seed ──────────────────────────────────────────────
+    np.random.seed(args.seed)
+    comp  = gen_compliance()
+    label = (f"Single illustrative run  (seed={args.seed})"
+             if args.runs > 1
+             else f"Single run  (seed={args.seed})")
+    print(f"\n{label}")
+    print(f"Forced absence windows: {ABSENCE_WINDOWS}")
 
-        print(f"\nResults at day {DAYS}:")
-        print(f"  Coverage:  A={cA:.1f}%  B={cB:.1f}%  C_hm_no_rev={cC_nr:.1f}%  "
-              f"C_hm={cC_hm:.1f}%  C={cC:.1f}%")
-        print(f"  Hours:     A={rA['tot']:.0f}  B={rB['tot']:.0f}  "
-              f"C_hm_no_rev={rC_nr['tot']:.0f}  C_hm={rC_hm['tot']:.0f}  C={rC['tot']:.0f}")
-        print(f"  Wtd mast:  A={rA['m'][-1]:.3f}  B={rB['m'][-1]:.3f}  "
-              f"C_hm_no_rev={rC_nr['m'][-1]:.3f}  C_hm={rC_hm['m'][-1]:.3f}  C={rC['m'][-1]:.3f}")
-        print(f"  Resets:    C_hm={len(rC_hm['resets'])}  C={len(rC['resets'])} (days {rC['resets']})")
-        print(f"\nAblation (single-variable comparisons):")
-        print(f"  B vs C_hm_no_rev (scheduling):  Δ coverage = {cC_nr - cB:+.1f}%")
-        print(f"  C_hm_no_rev vs C_hm (revision): Δ coverage = {cC_hm - cC_nr:+.1f}%")
-        print(f"  C_hm vs C (hours growth):        Δ coverage = {cC - cC_hm:+.1f}%")
+    rA    = run_A(comp)
+    rB    = run_B(comp)
+    rC_hm = run_C_hours_matched(comp, rB["tot"])
+    rC_nr = run_C_no_revision(comp)
+    rC    = run_C(comp)
 
-        if not args.no_figures:
-            save_figures(rA, rB, rC_nr, rC_hm, rC)
-            print("\nAll benchmark figures saved.")
+    print_ablation_table(rA, rB, rC_hm, rC_nr, rC, label=label)
+    print(f"  C resets: {len(rC['resets'])} (days {rC['resets']})")
+
+    if not args.no_figures:
+        save_figures(rA, rB, rC_hm, rC_nr, rC, seed=args.seed)
+        print("\nAll benchmark figures saved.")
+
 
 if __name__ == "__main__":
     main()
