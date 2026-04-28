@@ -24,15 +24,20 @@ TOPICS = [
     {"name": "Work Power Energy",   "W": 0.85, "D": 0.65, "prereqs": [1]},
     {"name": "Rotational Motion",   "W": 0.85, "D": 0.80, "prereqs": [2]},
     {"name": "Gravitation",         "W": 0.70, "D": 0.60, "prereqs": [1]},
+    {"name": "Properties of Matter","W": 0.60, "D": 0.55, "prereqs": []},
     {"name": "Thermodynamics",      "W": 0.80, "D": 0.70, "prereqs": []},
-    {"name": "Kinetic Theory",      "W": 0.70, "D": 0.65, "prereqs": [5]},
+    {"name": "Kinetic Theory",      "W": 0.70, "D": 0.65, "prereqs": [6]},
     {"name": "Waves",               "W": 0.75, "D": 0.60, "prereqs": []},
-    {"name": "Optics",              "W": 0.85, "D": 0.75, "prereqs": [7]},
+    {"name": "Optics",              "W": 0.85, "D": 0.75, "prereqs": [8]},
     {"name": "Electrostatics",      "W": 0.90, "D": 0.75, "prereqs": []},
-    {"name": "Current Electricity", "W": 0.85, "D": 0.70, "prereqs": [9]},
-    {"name": "Magnetism",           "W": 0.80, "D": 0.75, "prereqs": [10]},
-    {"name": "EMI",                 "W": 0.75, "D": 0.80, "prereqs": [11]},
-    {"name": "Modern Physics",      "W": 0.85, "D": 0.80, "prereqs": []},
+    {"name": "Current Electricity", "W": 0.85, "D": 0.70, "prereqs": [10]},
+    {"name": "Magnetism",           "W": 0.80, "D": 0.75, "prereqs": [11]},
+    {"name": "EMI",                 "W": 0.75, "D": 0.80, "prereqs": [12]},
+    {"name": "AC Circuits",         "W": 0.70, "D": 0.75, "prereqs": [13]},
+    {"name": "EM Waves",            "W": 0.60, "D": 0.50, "prereqs": []},
+    {"name": "Ray Optics",          "W": 0.80, "D": 0.70, "prereqs": [9]},
+    {"name": "Wave Optics",         "W": 0.75, "D": 0.75, "prereqs": [8]},
+    {"name": "Modern Physics",      "W": 0.85, "D": 0.80, "prereqs": [15]},
     {"name": "Semiconductor",       "W": 0.70, "D": 0.65, "prereqs": []},
 ]
 
@@ -236,7 +241,7 @@ def run_journey(comp):
                     studied_topics.append(rev)
 
             # ── Update growth rate ───────────────────────────────────────────
-            D = np.clip(h / K_th, 0, 1) if K_th > 0 else 1.0
+            D = np.clip(h / K_th, 0, 1) if K_th > 0 else 0.0
             if D >= 0.8:
                 r = max(r_prev, R_BASE)
             elif D > 0:
