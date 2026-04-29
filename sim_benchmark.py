@@ -15,11 +15,11 @@ Conditions
 ----------
   A         No schedule   – random topic selection, 2 hrs/day, slow decay
   B         Static        – sequential topics, 4 hrs/day fixed, no priority
-  C_hm      Hours-matched – full C scheduling logic, total hours capped to
-                            match B's total for the same seed; isolates
-                            scheduling quality from the hours advantage
-  C_nr      No revision   – C without the periodic revision block; isolates
-                            the revision mechanism's contribution
+  C_hm      Hours-matched – C scheduling logic, flat 4 hrs/day (same as B),
+                            revision enabled; isolates scheduling quality
+                            + revision contribution from hours growth
+  C_nr      No revision   – C scheduling logic, flat 4 hrs/day (same as B),
+                            revision disabled; isolates pure scheduling quality
   C (full)  Adaptive      – proposed system: priority function, dependency
                             graph, geometric capacity recovery, psychological
                             reset, and revision
@@ -29,9 +29,9 @@ and are labelled as such in every figure title.
 
 Ablation logic
 --------------
-  B  vs  C_hm   → pure scheduling quality  (same hours, different algorithm)
-  C_hm vs C_nr  → revision contribution    (same hours+scheduling, ± revision)
-  C_nr vs C     → growth-rate hours gain   (revision off vs full system)
+  B  vs  C_nr   → pure scheduling quality   (same hours=4/day, no revision)
+  C_nr vs C_hm  → revision contribution     (same hours=4/day, ± revision)
+  C_hm vs C     → hours-growth contribution (flat 4/day vs geometric growth)
 """
 
 import argparse
@@ -99,7 +99,7 @@ C_K_TARGET     = 7.0   # target capacity
 C_R_BASE       = 0.05  # base daily growth rate
 C_DECAY        = 0.995
 C_SCORE_LO, C_SCORE_HI = 0.45, 0.75
-C_DONE_THRESH  = 0.65  # mastery at which topic is marked done
+C_DONE_THRESH  = 0.55  # mastery at which topic is marked done
 C_UNDONE_THRESH= 0.48  # mastery below which a done topic is re-opened
 C_PREREQ_MIN   = 0.15  # minimum prereq mastery to unlock a topic
 C_PROP_GAMMA   = 0.9   # priority propagation damping factor
@@ -382,18 +382,17 @@ def run_C(comp):
     return {"M": M, "m": mlog, "resets": resets, "tot": sum(hlog),
             "sessions": sum(1 for h in hlog if h > 0)}
 
-# ── Condition C_hours_matched — C scheduling, hours capped to B's total ───────
-def run_C_hours_matched(comp, target_hours):
+# ── Condition C_hours_matched — C scheduling, flat 4 hrs/day (same as B) ──────
+def run_C_hours_matched(comp):
     """
-    Condition C with full scheduling logic, but total study hours capped to
-    ``target_hours`` (set equal to Condition B's total for the same compliance
-    sequence).  Isolates the value of C's scheduling algorithm from the
-    additional hours that geometric capacity recovery provides.
+    Condition C with full C scheduling logic and flat 4 hrs/day (same as B).
+    Revision enabled.  Uses B_HOURS_PER_DAY per compliant day so that both
+    per-day hours and total hours match Condition B exactly, eliminating the
+    temporal-distribution confound of the old budget-cap approach.
 
-    When the cumulative-hours budget is exhausted on a compliant day the
-    student is modelled as present but not studying: consec_missed is not
-    incremented (compliance is intact), but no mastery is updated and all
-    topics decay as on an absent day.
+    C_nr vs C_hm isolates the revision contribution alone (same hours and
+    scheduling algorithm, ± revision).
+    C_hm vs C isolates the hours-growth contribution (flat 4/day vs geometric).
     """
     M    = np.full(N, 0.2)
     n    = np.zeros(N, int)
@@ -408,7 +407,6 @@ def run_C_hours_matched(comp, target_hours):
     resets        = []
     mlog          = []
     hlog          = []
-    total_h       = 0.0          # cumulative hours spent so far
 
     for day in range(DAYS):
         c = comp[day]
@@ -419,96 +417,80 @@ def run_C_hours_matched(comp, target_hours):
             consec_missed = 0
             r = C_R_BASE
 
-        K_theoretical = min(C_K0 * (1 + C_R_BASE) ** day, C_K_TARGET)
         studied_topics = []
 
         if c > 0:
-            # Clamp available hours to remaining budget
-            remaining = max(0.0, target_hours - total_h)
-            h_raw     = c * K_theoretical
-            h         = min(h_raw, remaining)
-            if h < C_MIN_SLOT_HRS:
-                h = 0.0   # budget exhausted for this day
+            h = c * B_HOURS_PER_DAY
+            consec_missed = 0
 
-            consec_missed = 0   # student showed up regardless of budget
+            # ── Priority scores ──────────────────────────────────────────────
+            P = W_arr * D_arr * (1.0 - M)
+            for i in range(N):
+                if M[i] >= C_DONE_THRESH:
+                    done[i] = True
+                if M[i] < C_UNDONE_THRESH and done[i]:
+                    done[i] = False
+                if done[i]:
+                    P[i] = 0.0
 
-            if h > 0:
-                total_h += h
+            P2 = P.copy()
+            for j in range(N):
+                for p in TOPICS[j]["prereqs"]:
+                    P2[p] += C_PROP_GAMMA * C_PROP_LAMBDA * P[j]
+            P = P2
 
-                # ── Priority scores ──────────────────────────────────────────
-                P = W_arr * D_arr * (1.0 - M)
-                for i in range(N):
-                    if M[i] >= C_DONE_THRESH:
-                        done[i] = True
-                    if M[i] < C_UNDONE_THRESH and done[i]:
-                        done[i] = False
-                    if done[i]:
-                        P[i] = 0.0
+            eligible = [
+                i for i in range(N)
+                if all(M[p] >= C_PREREQ_MIN for p in TOPICS[i]["prereqs"])
+                and not done[i]
+            ]
+            if not eligible:
+                eligible = [i for i in range(N) if not done[i]]
+            if not eligible:
+                eligible = list(range(N))
 
-                P2 = P.copy()
-                for j in range(N):
-                    for p in TOPICS[j]["prereqs"]:
-                        P2[p] += C_PROP_GAMMA * C_PROP_LAMBDA * P[j]
-                P = P2
+            neglected = [i for i in range(N) if M[i] <= C_NEGLECT_MARK + 1e-6]
+            if neglected and h > C_NEGLECT_HRS:
+                eligible = list(set(eligible + neglected[:3]))
 
-                eligible = [
-                    i for i in range(N)
-                    if all(M[p] >= C_PREREQ_MIN for p in TOPICS[i]["prereqs"])
-                    and not done[i]
-                ]
-                if not eligible:
-                    eligible = [i for i in range(N) if not done[i]]
-                if not eligible:
-                    eligible = list(range(N))
+            top_topics = sorted(eligible, key=lambda i: P[i], reverse=True)
+            n_slots    = min(len(top_topics), max(2, int(h / C_SESSION_LEN)))
+            top        = top_topics[:n_slots]
+            pv         = np.array([P[i] + 1e-9 for i in top])
+            pv        /= pv.sum()
+            hours_each = pv * h
 
-                neglected = [i for i in range(N) if M[i] <= C_NEGLECT_MARK + 1e-6]
-                if neglected and h > C_NEGLECT_HRS:
-                    eligible = list(set(eligible + neglected[:3]))
+            for idx, t in enumerate(top):
+                if hours_each[idx] < C_MIN_SLOT_HRS:
+                    continue
+                s = np.random.uniform(C_SCORE_LO, C_SCORE_HI)
+                n[t] += 1
+                alpha = 1.0 / n[t]
+                M[t]  = np.clip(M[t] + alpha * (s - M[t]), 0, 1)
+                studied_topics.append(t)
 
-                top_topics = sorted(eligible, key=lambda i: P[i], reverse=True)
-                n_slots    = min(len(top_topics), max(2, int(h / C_SESSION_LEN)))
-                top        = top_topics[:n_slots]
-                pv         = np.array([P[i] + 1e-9 for i in top])
-                pv        /= pv.sum()
-                hours_each = pv * h
+            # Periodic revision (enabled; C_nr vs C_hm isolates this block)
+            done_list = [i for i in range(N) if done[i]]
+            if day % C_REVISION_EVERY == 0 and done_list and h > 0:
+                for rev in sorted(done_list, key=lambda i: M[i])[:C_REVISION_N]:
+                    s = np.random.uniform(C_REV_SCORE_LO, C_REV_SCORE_HI)
+                    n[rev] += 1
+                    alpha   = 1.0 / n[rev]
+                    M[rev]  = np.clip(M[rev] + alpha * (s - M[rev]), 0, 1)
+                    studied_topics.append(rev)
 
-                for idx, t in enumerate(top):
-                    if hours_each[idx] < C_MIN_SLOT_HRS:
-                        continue
-                    s = np.random.uniform(C_SCORE_LO, C_SCORE_HI)
-                    n[t] += 1
-                    alpha = 1.0 / n[t]
-                    M[t]  = np.clip(M[t] + alpha * (s - M[t]), 0, 1)
-                    studied_topics.append(t)
-
-                # Periodic revision (same as full C)
-                done_list = [i for i in range(N) if done[i]]
-                if day % C_REVISION_EVERY == 0 and done_list and h > 0:
-                    for rev in sorted(done_list, key=lambda i: M[i])[:C_REVISION_N]:
-                        s = np.random.uniform(C_REV_SCORE_LO, C_REV_SCORE_HI)
-                        n[rev] += 1
-                        alpha   = 1.0 / n[rev]
-                        M[rev]  = np.clip(M[rev] + alpha * (s - M[rev]), 0, 1)
-                        studied_topics.append(rev)
-
-                D = np.clip(h / K_theoretical, 0, 1) if K_theoretical > 0 else 0.0
-                if D >= 0.8:
-                    r = max(r_prev, C_R_BASE)
-                elif D > 0:
-                    r_prev = r
-                    r = max(r / 2, C_R_BASE * 0.3)
-                streak_buf.append(D)
-                if len(streak_buf) > C_STREAK_DAYS:
-                    streak_buf.pop(0)
-                if len(streak_buf) == C_STREAK_DAYS and all(d >= 0.8 for d in streak_buf):
-                    r *= C_R_BOOST
-
-            else:
-                # Budget exhausted: student present but no studying — decay all
-                D = 0.0
-                streak_buf.append(D)
-                if len(streak_buf) > C_STREAK_DAYS:
-                    streak_buf.pop(0)
+            # D = c since h = c * B_HOURS_PER_DAY
+            D = c
+            if D >= 0.8:
+                r = max(r_prev, C_R_BASE)
+            elif D > 0:
+                r_prev = r
+                r = max(r / 2, C_R_BASE * 0.3)
+            streak_buf.append(D)
+            if len(streak_buf) > C_STREAK_DAYS:
+                streak_buf.pop(0)
+            if len(streak_buf) == C_STREAK_DAYS and all(d >= 0.8 for d in streak_buf):
+                r *= C_R_BOOST
 
         else:
             h = 0.0
@@ -533,13 +515,15 @@ def run_C_hours_matched(comp, target_hours):
             "sessions": sum(1 for h in hlog if h > 0)}
 
 
-# ── Condition C_no_revision — C without the revision block ────────────────────
+# ── Condition C_no_revision — C scheduling, flat 4 hrs/day, revision off ──────
 def run_C_no_revision(comp):
     """
-    Condition C with the periodic revision mechanism disabled.
-    Isolates the contribution of high-score revision draws (0.75–0.95) to
-    C's mastery gains, holding all other components (priority function,
-    dependency graph, geometric capacity recovery, resets) constant.
+    Condition C with full C scheduling logic, flat 4 hrs/day (same as B),
+    and revision disabled.  Isolates the pure scheduling-quality contribution
+    over B (same hours=4/day, no revision in either condition).
+
+    C_nr vs B   → pure scheduling quality  (same hours=4/day, no revision)
+    C_nr vs C_hm → revision contribution   (same hours=4/day, ± revision)
     """
     M    = np.full(N, 0.2)
     n    = np.zeros(N, int)
@@ -564,11 +548,10 @@ def run_C_no_revision(comp):
             consec_missed = 0
             r = C_R_BASE
 
-        K_theoretical = min(C_K0 * (1 + C_R_BASE) ** day, C_K_TARGET)
         studied_topics = []
 
         if c > 0:
-            h = c * K_theoretical
+            h = c * B_HOURS_PER_DAY
             consec_missed = 0
 
             P = W_arr * D_arr * (1.0 - M)
@@ -618,7 +601,8 @@ def run_C_no_revision(comp):
 
             # Revision block intentionally omitted
 
-            D = np.clip(h / K_theoretical, 0, 1) if K_theoretical > 0 else 0.0
+            # D = c since h = c * B_HOURS_PER_DAY
+            D = c
             if D >= 0.8:
                 r = max(r_prev, C_R_BASE)
             elif D > 0:
@@ -684,9 +668,9 @@ def print_ablation_table(rA, rB, rC_hm, rC_nr, rC, label=""):
     hm_cov = coverage(rC_hm["M"])
     nr_cov = coverage(rC_nr["M"])
     c_cov  = coverage(rC["M"])
-    print(f"  Pure scheduling gain  (C_hm − B):       {hm_cov - b_cov:+.1f}%")
-    print(f"  Revision contribution (C_nr − C_hm):    {nr_cov - hm_cov:+.1f}%")
-    print(f"  Hours-growth gain     (C_full − C_nr):  {c_cov  - nr_cov:+.1f}%")
+    print(f"  Pure scheduling gain  (C_nr − B):       {nr_cov - b_cov:+.1f}%")
+    print(f"  Revision contribution (C_hm − C_nr):    {hm_cov - nr_cov:+.1f}%")
+    print(f"  Hours-growth gain     (C_full − C_hm):  {c_cov  - hm_cov:+.1f}%")
     print(sep)
 
 # ── Single-run figures ────────────────────────────────────────────────────────
@@ -802,7 +786,7 @@ def run_monte_carlo(n_runs, base_seed):
         comp  = gen_compliance()
         rA    = run_A(comp)
         rB    = run_B(comp)
-        rC_hm = run_C_hours_matched(comp, rB["tot"])
+        rC_hm = run_C_hours_matched(comp)
         rC_nr = run_C_no_revision(comp)
         rC    = run_C(comp)
 
@@ -853,9 +837,9 @@ def run_monte_carlo(n_runs, base_seed):
     hmm  = np.mean(results["cC_hm"])
     nrm  = np.mean(results["cC_nr"])
     cm   = np.mean(results["cC"])
-    print(f"  Pure scheduling gain  (C_hm − B):       {hmm - bm:+.1f}%  (same hours, better algorithm)")
-    print(f"  Revision contribution (C_nr − C_hm):    {nrm - hmm:+.1f}%  (same hours+scheduling, ± revision)")
-    print(f"  Hours-growth gain     (C_full − C_nr):  {cm  - nrm:+.1f}%  (full system vs no revision)")
+    print(f"  Pure scheduling gain  (C_nr − B):       {nrm - bm:+.1f}%  (same hours=4/day, no revision)")
+    print(f"  Revision contribution (C_hm − C_nr):    {hmm - nrm:+.1f}%  (same hours=4/day, ± revision)")
+    print(f"  Hours-growth gain     (C_full − C_hm):  {cm  - hmm:+.1f}%  (flat 4/day vs geometric growth)")
     print(sep)
 
     # ── Ablation bar chart (primary figure) ───────────────────────────────────
@@ -940,7 +924,7 @@ def main():
 
     rA    = run_A(comp)
     rB    = run_B(comp)
-    rC_hm = run_C_hours_matched(comp, rB["tot"])
+    rC_hm = run_C_hours_matched(comp)
     rC_nr = run_C_no_revision(comp)
     rC    = run_C(comp)
 
