@@ -192,7 +192,11 @@ def topological_weighted_order():
     while remaining:
         layer = [i for i in remaining if indegree[i] == 0]
         if not layer:
-            raise ValueError("Prerequisite graph contains a cycle; cannot topologically order topics.")
+            remaining_names = ", ".join(TOPICS[i]["name"] for i in sorted(remaining))
+            raise ValueError(
+                "Prerequisite graph contains a cycle; cannot topologically order topics. "
+                f"Remaining topics: {remaining_names}"
+            )
         for node in sorted(layer, key=lambda i: W_arr[i], reverse=True):
             order.append(node)
             remaining.remove(node)
@@ -295,7 +299,7 @@ def run_B(comp):
 # ── Condition B_p — Prioritised static schedule ────────────────────────────────
 def run_B_prioritised(comp):
     """
-    Condition B_p: static schedule sorted by W within prerequisite layers, 4 hrs/day.
+    Condition B_p: static schedule sorted by W (topic weight) within prerequisite layers, 4 hrs/day.
     No priority function, dependency graph, or capacity recovery.
     Uses W-only ordering to represent a simple prioritised-static baseline
     without mastery- or dependency-aware adaptation.
@@ -883,9 +887,9 @@ def save_figures(rA, rB, rB_p, rC_hm, rC_nr, rC, seed):
     ax4b.set_title(f"Weighted mastery across all topics  ({illu})")
     ax4b.set_ylim(0, 1.05)
     fig4b.tight_layout(pad=0.6)
-    fig4b.savefig("weighted_all_mastery_bar.png", dpi=300, bbox_inches="tight")
+    fig4b.savefig("weighted_all_mastery_single_seed.png", dpi=300, bbox_inches="tight")
     plt.close(fig4b)
-    print("Saved weighted_all_mastery_bar.png")
+    print("Saved weighted_all_mastery_single_seed.png")
 
     # Fig 5 — per-topic mastery (A / B / B_p / C full)
     sort_idx = np.argsort(W_arr)[::-1]
@@ -1095,9 +1099,9 @@ def run_monte_carlo(n_runs, base_seed):
     )
     ax_avg.set_ylim(0, 1.05)
     fig_avg.tight_layout(pad=0.6)
-    fig_avg.savefig("weighted_all_mastery_table.png", dpi=300, bbox_inches="tight")
+    fig_avg.savefig("weighted_all_mastery_monte_carlo.png", dpi=300, bbox_inches="tight")
     plt.close(fig_avg)
-    print("Saved weighted_all_mastery_table.png")
+    print("Saved weighted_all_mastery_monte_carlo.png")
 
     # ── Coverage distribution histogram ───────────────────────────────────────
     fig_dist, ax_dist = plt.subplots(figsize=(8, 4))
