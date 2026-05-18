@@ -121,17 +121,17 @@ C_R_BOOST      = 1.1   # multiplicative boost after streak
 K_PLATEAU_TOLERANCE = 0.01  # tolerance for K(t) plateau detection in journey plot
 
 # Table formatting widths
-TABLE_COND_WIDTH   = 28
-TABLE_COV_WIDTH    = 10
-TABLE_SECOND_WIDTH = 12
-TABLE_HOURS_WIDTH  = 8
-TABLE_SESS_WIDTH   = 10
-TABLE_WTD_WIDTH    = 10
-MC_COND_WIDTH      = 26
-MC_COV_WIDTH       = 14
-MC_SECOND_WIDTH    = 12
-MC_HOURS_WIDTH     = 10
-MC_SESS_WIDTH      = 10
+TABLE_COND_WIDTH    = 28
+TABLE_COV_WIDTH     = 10
+TABLE_WTD_ALL_WIDTH = 12
+TABLE_HOURS_WIDTH   = 8
+TABLE_SESS_WIDTH    = 10
+TABLE_WTD_WIDTH     = 10
+MC_COND_WIDTH       = 26
+MC_COV_WIDTH        = 14
+MC_WTD_ALL_WIDTH    = 12
+MC_HOURS_WIDTH      = 10
+MC_SESS_WIDTH       = 10
 
 # Figure formatting
 PERTOPIC_BAR_WIDTH = 0.20
@@ -760,7 +760,7 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
     hdr = (
         f"{'Condition':<{TABLE_COND_WIDTH}} "
         f"{'Coverage':>{TABLE_COV_WIDTH}} "
-        f"{'Wtd-All':>{TABLE_SECOND_WIDTH}} "
+        f"{'Wtd-All':>{TABLE_WTD_ALL_WIDTH}} "
         f"{'Hours':>{TABLE_HOURS_WIDTH}} "
         f"{'Sessions':>{TABLE_SESS_WIDTH}} "
         f"{'Wtd-Mast':>{TABLE_WTD_WIDTH}}"
@@ -780,7 +780,7 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
         wm  = r["m"][-1]
         print(
             f"{lbl:<{TABLE_COND_WIDTH}} {cov:>{cov_width}.1f}% "
-            f"{avg:>{TABLE_SECOND_WIDTH}.3f} {hrs:>{TABLE_HOURS_WIDTH}.0f} "
+            f"{avg:>{TABLE_WTD_ALL_WIDTH}.3f} {hrs:>{TABLE_HOURS_WIDTH}.0f} "
             f"{ses:>{TABLE_SESS_WIDTH}} {wm:>{TABLE_WTD_WIDTH}.3f}"
         )
     print(sep)
@@ -987,7 +987,7 @@ def run_monte_carlo(n_runs, base_seed):
     hdr = (
         f"{'Condition':<{MC_COND_WIDTH}} "
         f"{'Coverage (%)':>{MC_COV_WIDTH}} "
-        f"{'Wtd-All':>{MC_SECOND_WIDTH}} "
+        f"{'Wtd-All':>{MC_WTD_ALL_WIDTH}} "
         f"{'Hours':>{MC_HOURS_WIDTH}} "
         f"{'Sessions':>{MC_SESS_WIDTH}}"
     )
@@ -1017,7 +1017,7 @@ def run_monte_carlo(n_runs, base_seed):
         print(
             f"{lbl:<{MC_COND_WIDTH}} "
             f"{cov_str:>{MC_COV_WIDTH}} "
-            f"{second_str:>{MC_SECOND_WIDTH}} "
+            f"{second_str:>{MC_WTD_ALL_WIDTH}} "
             f"{hours_str:>{MC_HOURS_WIDTH}} "
             f"{sess_str:>{MC_SESS_WIDTH}}"
         )
