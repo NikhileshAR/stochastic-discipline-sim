@@ -192,10 +192,12 @@ def topological_weighted_order():
     while remaining:
         layer = [i for i in remaining if indegree[i] == 0]
         if not layer:
-            remaining_names = ", ".join(TOPICS[i]["name"] for i in sorted(remaining))
+            remaining_info = ", ".join(
+                f"{TOPICS[i]['name']}(in={indegree[i]})" for i in sorted(remaining)
+            )
             raise ValueError(
-                "Prerequisite graph contains a cycle; cannot topologically order topics. "
-                f"Remaining topics: {remaining_names}"
+                "Prerequisite graph contains a cycle or invalid prerequisites; "
+                f"remaining topics: {remaining_info}"
             )
         for node in sorted(layer, key=lambda i: W_arr[i], reverse=True):
             order.append(node)
