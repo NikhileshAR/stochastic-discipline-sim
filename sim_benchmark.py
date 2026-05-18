@@ -192,8 +192,7 @@ def topological_weighted_order():
     while remaining:
         layer = [i for i in remaining if indegree[i] == 0]
         if not layer:
-            order.extend(sorted(remaining, key=lambda i: W_arr[i], reverse=True))
-            break
+            raise ValueError("Prerequisite graph contains a cycle; cannot topologically order topics.")
         for node in sorted(layer, key=lambda i: W_arr[i], reverse=True):
             order.append(node)
             remaining.remove(node)
