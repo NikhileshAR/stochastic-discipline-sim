@@ -1089,7 +1089,7 @@ def save_journey_figures(result):
         ax2.annotate("Reset", xy=(rd + 1.5, 0.06), fontsize=10,
                      color="#DC2626", fontstyle="italic")
     ax2.set_xlabel("Day")
-    ax2.set_ylabel("Discipline Score (0–1)")
+    ax2.set_ylabel("Discipline Score (0\u20131)")
     ax2.set_xlim(0, DAYS)
     ax2.set_ylim(0, 1.1)
     ax2.legend(loc="lower right", fontsize=11, framealpha=0.9)
