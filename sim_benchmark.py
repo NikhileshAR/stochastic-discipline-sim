@@ -704,7 +704,7 @@ def run_C_no_revision(comp):
 def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
     """
     Print a formatted ablation table for a single seed run.
-    Columns: Condition | Coverage % | Avg Mastery | Hours | Sessions | Wtd-Mastery
+    Columns: Condition | Coverage % | Mean Mastery | Hours | Sessions | Wtd-Mastery
     """
     rows = [
         ("A   — No schedule",       rA),
@@ -714,8 +714,8 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
         ("C_nr — No revision",      rC_nr),
         ("C   — Full adaptive",     rC),
     ]
-    sep = "─" * 92
-    hdr = (f"{'Condition':<28} {'Coverage':>10} {'Mean-Mast':>10} "
+    sep = "─" * 96
+    hdr = (f"{'Condition':<28} {'Coverage':>10} {'Mean Mastery':>12} "
            f"{'Hours':>8} {'Sessions':>10} {'Wtd-Mast':>10}")
     if label:
         print(f"\n{label}")
@@ -728,7 +728,7 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
         hrs = r["tot"]
         ses = r["sessions"]
         wm  = r["m"][-1]
-        print(f"{lbl:<28} {cov:>9.1f}% {avg:>10.3f} {hrs:>8.0f} {ses:>10} {wm:>10.3f}")
+        print(f"{lbl:<28} {cov:>9.1f}% {avg:>12.3f} {hrs:>8.0f} {ses:>10} {wm:>10.3f}")
     print(sep)
     # Derived interpretation lines
     b_cov  = coverage(rB["M"])
@@ -928,11 +928,11 @@ def run_monte_carlo(n_runs, base_seed):
         if (i + 1) % max(1, n_runs // 10) == 0:
             print(f"  {i+1}/{n_runs} runs done")
 
-    sep = "─" * 96
+    sep = "─" * 100
     print(f"\n{sep}")
     print(f"Monte-Carlo ablation | {n_runs} seeds (range {base_seed}–{base_seed+n_runs-1})")
     print(sep)
-    print(f"{'Condition':<26} {'Coverage (%)':>14} {'Mean-Mast':>10} {'Hours':>10} {'Sessions':>10}")
+    print(f"{'Condition':<26} {'Coverage (%)':>14} {'Mean Mastery':>12} {'Hours':>10} {'Sessions':>10}")
     print(sep)
     cond_info = [
         ("A   — No schedule",    "cA",    "aA",    "hA",    "sA"),
@@ -948,7 +948,7 @@ def run_monte_carlo(n_runs, base_seed):
         hv = results[hk]
         sv = results[sk]
         print(f"{lbl:<26} {np.mean(cv):6.1f}% ±{np.std(cv):4.1f}%  "
-              f"{np.mean(av):7.3f} ±{np.std(av):.3f}  "
+              f"{np.mean(av):8.3f} ±{np.std(av):.3f}  "
               f"{np.mean(hv):6.0f} ±{np.std(hv):3.0f}  "
               f"{np.mean(sv):7.0f} ±{np.std(sv):.0f}")
     print(sep)
