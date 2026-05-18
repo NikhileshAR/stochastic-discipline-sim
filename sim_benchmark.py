@@ -117,7 +117,23 @@ C_REV_SCORE_LO, C_REV_SCORE_HI = 0.45, 0.75  # score range for revision (same as
 C_RESET_DAYS   = 3     # consecutive missed days before psychological reset
 C_STREAK_DAYS  = 7     # consecutive compliant days before r boost
 C_R_BOOST      = 1.1   # multiplicative boost after streak
-K_PLATEAU_EPS  = 0.01  # epsilon for K(t) plateau detection in journey plot
+K_PLATEAU_TOLERANCE = 0.01  # tolerance for K(t) plateau detection in journey plot
+
+# Table formatting widths
+TABLE_COND_WIDTH  = 28
+TABLE_COV_WIDTH   = 10
+TABLE_MEAN_WIDTH  = 12
+TABLE_HOURS_WIDTH = 8
+TABLE_SESS_WIDTH  = 10
+TABLE_WTD_WIDTH   = 10
+MC_COND_WIDTH     = 26
+MC_COV_WIDTH      = 14
+MC_MEAN_WIDTH     = 12
+MC_HOURS_WIDTH    = 10
+MC_SESS_WIDTH     = 10
+
+# Figure formatting
+PERTOPIC_BAR_WIDTH = 0.20
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 COL = {
@@ -716,21 +732,32 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
         ("C_nr — No revision",      rC_nr),
         ("C   — Full adaptive",     rC),
     ]
-    hdr = (f"{'Condition':<28} {'Coverage':>10} {'Mean Mastery':>12} "
-           f"{'Hours':>8} {'Sessions':>10} {'Wtd-Mast':>10}")
+    hdr = (
+        f"{'Condition':<{TABLE_COND_WIDTH}} "
+        f"{'Coverage':>{TABLE_COV_WIDTH}} "
+        f"{'Mean Mastery':>{TABLE_MEAN_WIDTH}} "
+        f"{'Hours':>{TABLE_HOURS_WIDTH}} "
+        f"{'Sessions':>{TABLE_SESS_WIDTH}} "
+        f"{'Wtd-Mast':>{TABLE_WTD_WIDTH}}"
+    )
     sep = "─" * len(hdr)
     if label:
         print(f"\n{label}")
     print(f"\n{sep}")
     print(hdr)
     print(sep)
+    cov_width = TABLE_COV_WIDTH - 1
     for lbl, r in rows:
         cov = coverage(r["M"])
         avg = mean_mastery(r["M"])
         hrs = r["tot"]
         ses = r["sessions"]
         wm  = r["m"][-1]
-        print(f"{lbl:<28} {cov:>9.1f}% {avg:>12.3f} {hrs:>8.0f} {ses:>10} {wm:>10.3f}")
+        print(
+            f"{lbl:<{TABLE_COND_WIDTH}} {cov:>{cov_width}.1f}% "
+            f"{avg:>{TABLE_MEAN_WIDTH}.3f} {hrs:>{TABLE_HOURS_WIDTH}.0f} "
+            f"{ses:>{TABLE_SESS_WIDTH}} {wm:>{TABLE_WTD_WIDTH}.3f}"
+        )
     print(sep)
     # Derived interpretation lines
     b_cov  = coverage(rB["M"])
@@ -840,7 +867,7 @@ def save_figures(rA, rB, rB_p, rC_hm, rC_nr, rC, seed):
     labs     = [TOPICS[i]["name"] for i in sort_idx]
     fig5, ax5 = plt.subplots(figsize=(14, 4))
     x = np.arange(N)
-    bar_width = 0.20
+    bar_width = PERTOPIC_BAR_WIDTH
     ax5.bar(x - 1.5 * bar_width, rA["M"][sort_idx], bar_width, color=COL["A"],  alpha=0.85,
             edgecolor="white", lw=0.8,
             label="A — No Schedule")
@@ -930,8 +957,13 @@ def run_monte_carlo(n_runs, base_seed):
         if (i + 1) % max(1, n_runs // 10) == 0:
             print(f"  {i+1}/{n_runs} runs done")
 
-    hdr = (f"{'Condition':<26} {'Coverage (%)':>14} {'Mean Mastery':>12} "
-           f"{'Hours':>10} {'Sessions':>10}")
+    hdr = (
+        f"{'Condition':<{MC_COND_WIDTH}} "
+        f"{'Coverage (%)':>{MC_COV_WIDTH}} "
+        f"{'Mean Mastery':>{MC_MEAN_WIDTH}} "
+        f"{'Hours':>{MC_HOURS_WIDTH}} "
+        f"{'Sessions':>{MC_SESS_WIDTH}}"
+    )
     sep = "─" * len(hdr)
     print(f"\n{sep}")
     print(f"Monte-Carlo ablation | {n_runs} seeds (range {base_seed}–{base_seed+n_runs-1})")
@@ -951,10 +983,17 @@ def run_monte_carlo(n_runs, base_seed):
         av = results[ak]
         hv = results[hk]
         sv = results[sk]
-        print(f"{lbl:<26} {np.mean(cv):6.1f}% ±{np.std(cv):4.1f}%  "
-              f"{np.mean(av):8.3f} ±{np.std(av):.3f}  "
-              f"{np.mean(hv):6.0f} ±{np.std(hv):3.0f}  "
-              f"{np.mean(sv):7.0f} ±{np.std(sv):.0f}")
+        cov_str = f"{np.mean(cv):.1f}% ±{np.std(cv):.1f}%"
+        mean_str = f"{np.mean(av):.3f} ±{np.std(av):.3f}"
+        hours_str = f"{np.mean(hv):.0f} ±{np.std(hv):.0f}"
+        sess_str = f"{np.mean(sv):.0f} ±{np.std(sv):.0f}"
+        print(
+            f"{lbl:<{MC_COND_WIDTH}} "
+            f"{cov_str:>{MC_COV_WIDTH}} "
+            f"{mean_str:>{MC_MEAN_WIDTH}} "
+            f"{hours_str:>{MC_HOURS_WIDTH}} "
+            f"{sess_str:>{MC_SESS_WIDTH}}"
+        )
     print(sep)
     # Interpretation
     bm   = np.mean(results["cB"])
@@ -1062,7 +1101,7 @@ def save_journey_figures(result):
     ax1.plot(dx, s7(result["H_daily"]), color="#16A34A", lw=2.2,
              label="Actual hours studied (7-day avg)")
     plateau_day = next(
-        (i for i, k in enumerate(result["K_theory"]) if k >= C_K_TARGET - K_PLATEAU_EPS),
+        (i for i, k in enumerate(result["K_theory"]) if k >= C_K_TARGET - K_PLATEAU_TOLERANCE),
         DAYS,
     )
     ax1.plot(dx[:plateau_day], result["K_theory"][:plateau_day],
