@@ -117,6 +117,7 @@ C_REV_SCORE_LO, C_REV_SCORE_HI = 0.45, 0.75  # score range for revision (same as
 C_RESET_DAYS   = 3     # consecutive missed days before psychological reset
 C_STREAK_DAYS  = 7     # consecutive compliant days before r boost
 C_R_BOOST      = 1.1   # multiplicative boost after streak
+K_PLATEAU_EPS  = 0.01  # epsilon for K(t) plateau detection in journey plot
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 COL = {
@@ -837,14 +838,18 @@ def save_figures(rA, rB, rB_p, rC_hm, rC_nr, rC, seed):
     labs     = [TOPICS[i]["name"] for i in sort_idx]
     fig5, ax5 = plt.subplots(figsize=(14, 4))
     x = np.arange(N)
-    w = 0.20
-    ax5.bar(x - 1.5 * w, rA["M"][sort_idx], w, color=COL["A"],  alpha=0.85, edgecolor="white", lw=0.8,
+    bar_width = 0.20
+    ax5.bar(x - 1.5 * bar_width, rA["M"][sort_idx], bar_width, color=COL["A"],  alpha=0.85,
+            edgecolor="white", lw=0.8,
             label="A — No Schedule")
-    ax5.bar(x - 0.5 * w, rB["M"][sort_idx], w, color=COL["B"],  alpha=0.85, edgecolor="white", lw=0.8,
+    ax5.bar(x - 0.5 * bar_width, rB["M"][sort_idx], bar_width, color=COL["B"],  alpha=0.85,
+            edgecolor="white", lw=0.8,
             label="B — Static Schedule")
-    ax5.bar(x + 0.5 * w, rB_p["M"][sort_idx], w, color=COL["B_p"], alpha=0.88, edgecolor="white", lw=0.8,
+    ax5.bar(x + 0.5 * bar_width, rB_p["M"][sort_idx], bar_width, color=COL["B_p"],
+            alpha=0.88, edgecolor="white", lw=0.8,
             label="B_p — Prioritised static")
-    ax5.bar(x + 1.5 * w, rC["M"][sort_idx], w, color=COL["C"],  alpha=0.90, edgecolor="white", lw=0.8,
+    ax5.bar(x + 1.5 * bar_width, rC["M"][sort_idx], bar_width, color=COL["C"],
+            alpha=0.90, edgecolor="white", lw=0.8,
             label="C — Full Adaptive")
     ax5.set_xlabel("Topic (sorted by weightage, highest to lowest)")
     ax5.set_ylabel("Mastery Score (0\u20131)")
@@ -1052,7 +1057,10 @@ def save_journey_figures(result):
     ax1.fill_between(dx, s7(result["H_daily"]), alpha=0.18, color="#16A34A")
     ax1.plot(dx, s7(result["H_daily"]), color="#16A34A", lw=2.2,
              label="Actual hours studied (7-day avg)")
-    plateau_day = next((i for i, k in enumerate(result["K_theory"]) if k >= C_K_TARGET - 0.01), DAYS)
+    plateau_day = next(
+        (i for i, k in enumerate(result["K_theory"]) if k >= C_K_TARGET - K_PLATEAU_EPS),
+        DAYS,
+    )
     ax1.plot(dx[:plateau_day], result["K_theory"][:plateau_day],
              color="black", lw=1.5, ls="--", alpha=0.5, label="K(t) theoretical")
     ax1.axhline(C_K0, color="#6B7280", lw=1.2, ls=":", alpha=0.6,
