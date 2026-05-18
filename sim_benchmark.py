@@ -256,6 +256,8 @@ def run_B_prioritised(comp):
     """
     Condition B_p: static schedule sorted by topic weight (W), 4 hrs/day.
     No priority function, dependency graph, or capacity recovery.
+    Uses W-only ordering to represent a simple prioritised-static baseline
+    without mastery- or dependency-aware adaptation.
     """
     M    = np.full(N, 0.2)
     n    = np.zeros(N, int)
@@ -714,9 +716,9 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
         ("C_nr — No revision",      rC_nr),
         ("C   — Full adaptive",     rC),
     ]
-    sep = "─" * 96
     hdr = (f"{'Condition':<28} {'Coverage':>10} {'Mean Mastery':>12} "
            f"{'Hours':>8} {'Sessions':>10} {'Wtd-Mast':>10}")
+    sep = "─" * len(hdr)
     if label:
         print(f"\n{label}")
     print(f"\n{sep}")
@@ -928,11 +930,13 @@ def run_monte_carlo(n_runs, base_seed):
         if (i + 1) % max(1, n_runs // 10) == 0:
             print(f"  {i+1}/{n_runs} runs done")
 
-    sep = "─" * 100
+    hdr = (f"{'Condition':<26} {'Coverage (%)':>14} {'Mean Mastery':>12} "
+           f"{'Hours':>10} {'Sessions':>10}")
+    sep = "─" * len(hdr)
     print(f"\n{sep}")
     print(f"Monte-Carlo ablation | {n_runs} seeds (range {base_seed}–{base_seed+n_runs-1})")
     print(sep)
-    print(f"{'Condition':<26} {'Coverage (%)':>14} {'Mean Mastery':>12} {'Hours':>10} {'Sessions':>10}")
+    print(hdr)
     print(sep)
     cond_info = [
         ("A   — No schedule",    "cA",    "aA",    "hA",    "sA"),
