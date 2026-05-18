@@ -17,7 +17,8 @@ Conditions
 ----------
   A         No schedule    – random topic selection, 2 hrs/day, slow decay
   B         Static         – sequential topics, 4 hrs/day fixed, no priority
-  B_p       Prioritised    – static schedule sorted by W, 4 hrs/day, no adaptation
+  B_p       Prioritised    – static schedule sorted by W within prereq layers,
+                             4 hrs/day, no adaptation
   C_hm      Hours-matched  – C scheduling logic, flat 4 hrs/day (same as B),
                              revision enabled; isolates scheduling quality
                              + revision contribution from hours growth
@@ -120,17 +121,17 @@ C_R_BOOST      = 1.1   # multiplicative boost after streak
 K_PLATEAU_TOLERANCE = 0.01  # tolerance for K(t) plateau detection in journey plot
 
 # Table formatting widths
-TABLE_COND_WIDTH  = 28
-TABLE_COV_WIDTH   = 10
-TABLE_MEAN_WIDTH  = 12
-TABLE_HOURS_WIDTH = 8
-TABLE_SESS_WIDTH  = 10
-TABLE_WTD_WIDTH   = 10
-MC_COND_WIDTH     = 26
-MC_COV_WIDTH      = 14
-MC_MEAN_WIDTH     = 12
-MC_HOURS_WIDTH    = 10
-MC_SESS_WIDTH     = 10
+TABLE_COND_WIDTH   = 28
+TABLE_COV_WIDTH    = 10
+TABLE_SECOND_WIDTH = 12
+TABLE_HOURS_WIDTH  = 8
+TABLE_SESS_WIDTH   = 10
+TABLE_WTD_WIDTH    = 10
+MC_COND_WIDTH      = 26
+MC_COV_WIDTH       = 14
+MC_SECOND_WIDTH    = 12
+MC_HOURS_WIDTH     = 10
+MC_SESS_WIDTH      = 10
 
 # Figure formatting
 PERTOPIC_BAR_WIDTH = 0.20
@@ -163,9 +164,9 @@ def weighted_mastery(M):
     """Weighted average mastery over high-priority topics."""
     return float(np.sum(W_arr[HIGH_W] * M[HIGH_W]) / np.sum(W_arr[HIGH_W]))
 
-def mean_mastery(M):
-    """Mean mastery across all topics (M is the per-topic mastery array)."""
-    return float(np.mean(M))
+def weighted_mastery_all(M):
+    """Weighted average mastery across all topics (M is the per-topic mastery array)."""
+    return float(np.sum(W_arr * M) / np.sum(W_arr))
 
 def coverage(M):
     """Percentage of high-priority topics above MASTERY_THRESHOLD."""
@@ -174,6 +175,31 @@ def coverage(M):
 
 def rolling14(series):
     return pd.Series(series).rolling(14, min_periods=1).mean().tolist()
+
+def topological_weighted_order():
+    """
+    Topological order by prerequisites, sorting each layer by descending W.
+    Ensures prerequisites appear before dependent topics.
+    """
+    indegree = [len(topic["prereqs"]) for topic in TOPICS]
+    children = {i: [] for i in range(N)}
+    for i, topic in enumerate(TOPICS):
+        for prereq in topic["prereqs"]:
+            children[prereq].append(i)
+
+    remaining = set(range(N))
+    order = []
+    while remaining:
+        layer = [i for i in remaining if indegree[i] == 0]
+        if not layer:
+            order.extend(sorted(remaining, key=lambda i: W_arr[i], reverse=True))
+            break
+        for node in sorted(layer, key=lambda i: W_arr[i], reverse=True):
+            order.append(node)
+            remaining.remove(node)
+            for child in children[node]:
+                indegree[child] -= 1
+    return order
 
 # ── Compliance generator ──────────────────────────────────────────────────────
 def gen_compliance():
@@ -270,7 +296,7 @@ def run_B(comp):
 # ── Condition B_p — Prioritised static schedule ────────────────────────────────
 def run_B_prioritised(comp):
     """
-    Condition B_p: static schedule sorted by topic weight (W), 4 hrs/day.
+    Condition B_p: static schedule sorted by W within prerequisite layers, 4 hrs/day.
     No priority function, dependency graph, or capacity recovery.
     Uses W-only ordering to represent a simple prioritised-static baseline
     without mastery- or dependency-aware adaptation.
@@ -281,7 +307,7 @@ def run_B_prioritised(comp):
     mlog = []
     hlog = []
 
-    order = sorted(range(N), key=lambda i: W_arr[i], reverse=True)
+    order = topological_weighted_order()
 
     for day in range(DAYS):
         c = comp[day]
@@ -722,7 +748,7 @@ def run_C_no_revision(comp):
 def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
     """
     Print a formatted ablation table for a single seed run.
-    Columns: Condition | Coverage % | Mean Mastery | Hours | Sessions | Wtd-Mastery
+    Columns: Condition | Coverage % | Wtd-All | Hours | Sessions | Wtd-Mastery
     """
     rows = [
         ("A   — No schedule",       rA),
@@ -735,7 +761,7 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
     hdr = (
         f"{'Condition':<{TABLE_COND_WIDTH}} "
         f"{'Coverage':>{TABLE_COV_WIDTH}} "
-        f"{'Mean Mastery':>{TABLE_MEAN_WIDTH}} "
+        f"{'Wtd-All':>{TABLE_SECOND_WIDTH}} "
         f"{'Hours':>{TABLE_HOURS_WIDTH}} "
         f"{'Sessions':>{TABLE_SESS_WIDTH}} "
         f"{'Wtd-Mast':>{TABLE_WTD_WIDTH}}"
@@ -749,13 +775,13 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
     cov_width = TABLE_COV_WIDTH - 1
     for lbl, r in rows:
         cov = coverage(r["M"])
-        avg = mean_mastery(r["M"])
+        avg = weighted_mastery_all(r["M"])
         hrs = r["tot"]
         ses = r["sessions"]
         wm  = r["m"][-1]
         print(
             f"{lbl:<{TABLE_COND_WIDTH}} {cov:>{cov_width}.1f}% "
-            f"{avg:>{TABLE_MEAN_WIDTH}.3f} {hrs:>{TABLE_HOURS_WIDTH}.0f} "
+            f"{avg:>{TABLE_SECOND_WIDTH}.3f} {hrs:>{TABLE_HOURS_WIDTH}.0f} "
             f"{ses:>{TABLE_SESS_WIDTH}} {wm:>{TABLE_WTD_WIDTH}.3f}"
         )
     print(sep)
@@ -836,31 +862,31 @@ def save_figures(rA, rB, rB_p, rC_hm, rC_nr, rC, seed):
     plt.close(fig4)
     print("Saved coverage_bar.png")
 
-    # Fig 4b — average mastery across all topics (secondary metric)
+    # Fig 4b — weighted mastery across all topics (secondary metric)
     fig4b, ax4b = plt.subplots(figsize=(8, 4))
-    avg_vals = [
-        mean_mastery(rA["M"]),
-        mean_mastery(rB["M"]),
-        mean_mastery(rB_p["M"]),
-        mean_mastery(rC_hm["M"]),
-        mean_mastery(rC_nr["M"]),
-        mean_mastery(rC["M"]),
+    all_wtd_vals = [
+        weighted_mastery_all(rA["M"]),
+        weighted_mastery_all(rB["M"]),
+        weighted_mastery_all(rB_p["M"]),
+        weighted_mastery_all(rC_hm["M"]),
+        weighted_mastery_all(rC_nr["M"]),
+        weighted_mastery_all(rC["M"]),
     ]
-    bars = ax4b.bar(labels, avg_vals, color=colors, edgecolor="white",
+    bars = ax4b.bar(labels, all_wtd_vals, color=colors, edgecolor="white",
                     linewidth=1.5, width=0.55, alpha=0.92)
-    for bar, val in zip(bars, avg_vals):
+    for bar, val in zip(bars, all_wtd_vals):
         ax4b.text(
             bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
             f"{val:.2f}", ha="center", va="bottom",
             fontsize=11, fontweight="bold", color="#1F2937",
         )
-    ax4b.set_ylabel("Mean Mastery (0–1)")
-    ax4b.set_title(f"Mean mastery across all topics  ({illu})")
+    ax4b.set_ylabel("Weighted Mastery (All Topics)")
+    ax4b.set_title(f"Weighted mastery across all topics  ({illu})")
     ax4b.set_ylim(0, 1.05)
     fig4b.tight_layout(pad=0.6)
-    fig4b.savefig("avg_mastery_bar.png", dpi=300, bbox_inches="tight")
+    fig4b.savefig("weighted_all_mastery_bar.png", dpi=300, bbox_inches="tight")
     plt.close(fig4b)
-    print("Saved avg_mastery_bar.png")
+    print("Saved weighted_all_mastery_bar.png")
 
     # Fig 5 — per-topic mastery (A / B / B_p / C full)
     sort_idx = np.argsort(W_arr)[::-1]
@@ -901,7 +927,7 @@ def run_monte_carlo(n_runs, base_seed):
 
     Primary outputs
     ---------------
-      • Printed ablation table: mean ± std for coverage, mean mastery, and hours.
+      • Printed ablation table: mean ± std for coverage, weighted-all mastery, and hours.
     • ablation_table.png — bar chart with error bars (the paper's primary figure).
     • coverage_distribution.png — stacked histogram of coverage distributions.
 
@@ -915,7 +941,7 @@ def run_monte_carlo(n_runs, base_seed):
         "cA": [],    "cB": [],    "cB_p": [],  "cC_hm": [],  "cC_nr": [],  "cC": [],
         "hA": [],    "hB": [],    "hB_p": [],  "hC_hm": [],  "hC_nr": [],  "hC": [],
         "sA": [],    "sB": [],    "sB_p": [],  "sC_hm": [],  "sC_nr": [],  "sC": [],
-        "aA": [],    "aB": [],    "aB_p": [],  "aC_hm": [],  "aC_nr": [],  "aC": [],
+        "wA": [],    "wB": [],    "wB_p": [],  "wC_hm": [],  "wC_nr": [],  "wC": [],
     }
 
     for i in range(n_runs):
@@ -949,12 +975,12 @@ def run_monte_carlo(n_runs, base_seed):
         results["sC_nr"].append(rC_nr["sessions"])
         results["sC"].append(rC["sessions"])
 
-        results["aA"].append(mean_mastery(rA["M"]))
-        results["aB"].append(mean_mastery(rB["M"]))
-        results["aB_p"].append(mean_mastery(rB_p["M"]))
-        results["aC_hm"].append(mean_mastery(rC_hm["M"]))
-        results["aC_nr"].append(mean_mastery(rC_nr["M"]))
-        results["aC"].append(mean_mastery(rC["M"]))
+        results["wA"].append(weighted_mastery_all(rA["M"]))
+        results["wB"].append(weighted_mastery_all(rB["M"]))
+        results["wB_p"].append(weighted_mastery_all(rB_p["M"]))
+        results["wC_hm"].append(weighted_mastery_all(rC_hm["M"]))
+        results["wC_nr"].append(weighted_mastery_all(rC_nr["M"]))
+        results["wC"].append(weighted_mastery_all(rC["M"]))
 
         if (i + 1) % max(1, n_runs // 10) == 0:
             print(f"  {i+1}/{n_runs} runs done")
@@ -962,7 +988,7 @@ def run_monte_carlo(n_runs, base_seed):
     hdr = (
         f"{'Condition':<{MC_COND_WIDTH}} "
         f"{'Coverage (%)':>{MC_COV_WIDTH}} "
-        f"{'Mean Mastery':>{MC_MEAN_WIDTH}} "
+        f"{'Wtd-All':>{MC_SECOND_WIDTH}} "
         f"{'Hours':>{MC_HOURS_WIDTH}} "
         f"{'Sessions':>{MC_SESS_WIDTH}}"
     )
@@ -973,12 +999,12 @@ def run_monte_carlo(n_runs, base_seed):
     print(hdr)
     print(sep)
     cond_info = [
-        ("A   — No schedule",    "cA",    "aA",    "hA",    "sA"),
-        ("B   — Static",         "cB",    "aB",    "hB",    "sB"),
-        ("B_p — Prioritised",    "cB_p",  "aB_p",  "hB_p",  "sB_p"),
-        ("C_hm — Hrs-matched",   "cC_hm", "aC_hm", "hC_hm", "sC_hm"),
-        ("C_nr — No revision",   "cC_nr", "aC_nr", "hC_nr", "sC_nr"),
-        ("C   — Full adaptive",  "cC",    "aC",    "hC",    "sC"),
+        ("A   — No schedule",    "cA",    "wA",    "hA",    "sA"),
+        ("B   — Static",         "cB",    "wB",    "hB",    "sB"),
+        ("B_p — Prioritised",    "cB_p",  "wB_p",  "hB_p",  "sB_p"),
+        ("C_hm — Hrs-matched",   "cC_hm", "wC_hm", "hC_hm", "sC_hm"),
+        ("C_nr — No revision",   "cC_nr", "wC_nr", "hC_nr", "sC_nr"),
+        ("C   — Full adaptive",  "cC",    "wC",    "hC",    "sC"),
     ]
     for lbl, ck, ak, hk, sk in cond_info:
         cv = results[ck]
@@ -986,13 +1012,13 @@ def run_monte_carlo(n_runs, base_seed):
         hv = results[hk]
         sv = results[sk]
         cov_str = f"{np.mean(cv):.1f}% ±{np.std(cv):.1f}%"
-        mean_str = f"{np.mean(av):.3f} ±{np.std(av):.3f}"
+        second_str = f"{np.mean(av):.3f} ±{np.std(av):.3f}"
         hours_str = f"{np.mean(hv):.0f} ±{np.std(hv):.0f}"
         sess_str = f"{np.mean(sv):.0f} ±{np.std(sv):.0f}"
         print(
             f"{lbl:<{MC_COND_WIDTH}} "
             f"{cov_str:>{MC_COV_WIDTH}} "
-            f"{mean_str:>{MC_MEAN_WIDTH}} "
+            f"{second_str:>{MC_SECOND_WIDTH}} "
             f"{hours_str:>{MC_HOURS_WIDTH}} "
             f"{sess_str:>{MC_SESS_WIDTH}}"
         )
@@ -1048,8 +1074,8 @@ def run_monte_carlo(n_runs, base_seed):
 
     # ── Average mastery bar chart (secondary metric) ──────────────────────────
     fig_avg, ax_avg = plt.subplots(figsize=(10, 5))
-    avg_means = [np.mean(results[k]) for k in ["aA", "aB", "aB_p", "aC_hm", "aC_nr", "aC"]]
-    avg_stds  = [np.std(results[k])  for k in ["aA", "aB", "aB_p", "aC_hm", "aC_nr", "aC"]]
+    avg_means = [np.mean(results[k]) for k in ["wA", "wB", "wB_p", "wC_hm", "wC_nr", "wC"]]
+    avg_stds  = [np.std(results[k])  for k in ["wA", "wB", "wB_p", "wC_hm", "wC_nr", "wC"]]
     bars = ax_avg.bar(
         cond_labels, avg_means, yerr=avg_stds, capsize=6,
         color=colors, alpha=0.88, width=0.55,
@@ -1062,17 +1088,17 @@ def run_monte_carlo(n_runs, base_seed):
             f"{m:.2f}",
             ha="center", va="bottom", fontsize=11, fontweight="bold", color="#1F2937",
         )
-    ax_avg.set_ylabel("Mean Mastery (0–1) — mean ± std")
+    ax_avg.set_ylabel("Weighted Mastery (All Topics) — mean ± std")
     ax_avg.set_title(
-        f"Mean mastery over {n_runs} seeds "
+        f"Weighted mastery (all topics) over {n_runs} seeds "
         f"(seed range {base_seed}–{base_seed+n_runs-1}) — SECONDARY METRIC",
         fontsize=12,
     )
     ax_avg.set_ylim(0, 1.05)
     fig_avg.tight_layout(pad=0.6)
-    fig_avg.savefig("avg_mastery_table.png", dpi=300, bbox_inches="tight")
+    fig_avg.savefig("weighted_all_mastery_table.png", dpi=300, bbox_inches="tight")
     plt.close(fig_avg)
-    print("Saved avg_mastery_table.png")
+    print("Saved weighted_all_mastery_table.png")
 
     # ── Coverage distribution histogram ───────────────────────────────────────
     fig_dist, ax_dist = plt.subplots(figsize=(8, 4))
