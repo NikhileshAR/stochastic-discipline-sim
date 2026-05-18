@@ -164,7 +164,7 @@ def weighted_mastery(M):
     return float(np.sum(W_arr[HIGH_W] * M[HIGH_W]) / np.sum(W_arr[HIGH_W]))
 
 def mean_mastery(M):
-    """Mean mastery across all topics."""
+    """Mean mastery across all topics (M is the per-topic mastery array)."""
     return float(np.mean(M))
 
 def coverage(M):
@@ -336,6 +336,7 @@ def run_C(comp):
 
     for day in range(DAYS):
         c = comp[day]
+        D = 0.0
 
         # ── Psychological reset ──────────────────────────────────────────────
         if consec_missed >= C_RESET_DAYS:
@@ -428,7 +429,6 @@ def run_C(comp):
 
         else:
             h = 0.0
-            D = 0.0
             consec_missed += 1
             r_prev = r
             r = C_R_BASE * 0.1
@@ -868,16 +868,18 @@ def save_figures(rA, rB, rB_p, rC_hm, rC_nr, rC, seed):
     fig5, ax5 = plt.subplots(figsize=(14, 4))
     x = np.arange(N)
     bar_width = PERTOPIC_BAR_WIDTH
-    ax5.bar(x - 1.5 * bar_width, rA["M"][sort_idx], bar_width, color=COL["A"],  alpha=0.85,
+    offsets = [-1.5, -0.5, 0.5, 1.5]
+    pos_a, pos_b, pos_bp, pos_c = [x + offset * bar_width for offset in offsets]
+    ax5.bar(pos_a, rA["M"][sort_idx], bar_width, color=COL["A"],  alpha=0.85,
             edgecolor="white", lw=0.8,
             label="A — No Schedule")
-    ax5.bar(x - 0.5 * bar_width, rB["M"][sort_idx], bar_width, color=COL["B"],  alpha=0.85,
+    ax5.bar(pos_b, rB["M"][sort_idx], bar_width, color=COL["B"],  alpha=0.85,
             edgecolor="white", lw=0.8,
             label="B — Static Schedule")
-    ax5.bar(x + 0.5 * bar_width, rB_p["M"][sort_idx], bar_width, color=COL["B_p"],
+    ax5.bar(pos_bp, rB_p["M"][sort_idx], bar_width, color=COL["B_p"],
             alpha=0.88, edgecolor="white", lw=0.8,
             label="B_p — Prioritised static")
-    ax5.bar(x + 1.5 * bar_width, rC["M"][sort_idx], bar_width, color=COL["C"],
+    ax5.bar(pos_c, rC["M"][sort_idx], bar_width, color=COL["C"],
             alpha=0.90, edgecolor="white", lw=0.8,
             label="C — Full Adaptive")
     ax5.set_xlabel("Topic (sorted by weightage, highest to lowest)")
