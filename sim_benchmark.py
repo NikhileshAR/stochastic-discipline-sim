@@ -715,7 +715,7 @@ def print_ablation_table(rA, rB, rB_p, rC_hm, rC_nr, rC, label=""):
         ("C   — Full adaptive",     rC),
     ]
     sep = "─" * 92
-    hdr = (f"{'Condition':<28} {'Coverage':>10} {'Avg-Mast':>10} "
+    hdr = (f"{'Condition':<28} {'Coverage':>10} {'Mean-Mast':>10} "
            f"{'Hours':>8} {'Sessions':>10} {'Wtd-Mast':>10}")
     if label:
         print(f"\n{label}")
@@ -930,9 +930,9 @@ def run_monte_carlo(n_runs, base_seed):
 
     sep = "─" * 96
     print(f"\n{sep}")
-    print(f"Monte-Carlo ablation  |  {n_runs} seeds  (range {base_seed}–{base_seed+n_runs-1})")
+    print(f"Monte-Carlo ablation | {n_runs} seeds (range {base_seed}–{base_seed+n_runs-1})")
     print(sep)
-    print(f"{'Condition':<26} {'Coverage (%)':>14} {'Avg-Mast':>10} {'Hours':>10} {'Sessions':>10}")
+    print(f"{'Condition':<26} {'Coverage (%)':>14} {'Mean-Mast':>10} {'Hours':>10} {'Sessions':>10}")
     print(sep)
     cond_info = [
         ("A   — No schedule",    "cA",    "aA",    "hA",    "sA"),
@@ -991,8 +991,8 @@ def run_monte_carlo(n_runs, base_seed):
         )
     ax_abl.set_ylabel("High-Priority Coverage (%) — mean ± std")
     ax_abl.set_title(
-        f"Ablation over {n_runs} seeds  "
-        f"(seed range {base_seed}–{base_seed+n_runs-1})  —  PRIMARY RESULT",
+        f"Ablation over {n_runs} seeds "
+        f"(seed range {base_seed}–{base_seed+n_runs-1}) — PRIMARY RESULT",
         fontsize=12,
     )
     ax_abl.set_ylim(0, 115)
@@ -1019,8 +1019,8 @@ def run_monte_carlo(n_runs, base_seed):
         )
     ax_avg.set_ylabel("Mean Mastery (0–1) — mean ± std")
     ax_avg.set_title(
-        f"Mean mastery over {n_runs} seeds  "
-        f"(seed range {base_seed}–{base_seed+n_runs-1})  —  SECONDARY METRIC",
+        f"Mean mastery over {n_runs} seeds "
+        f"(seed range {base_seed}–{base_seed+n_runs-1}) — SECONDARY METRIC",
         fontsize=12,
     )
     ax_avg.set_ylim(0, 1.05)
